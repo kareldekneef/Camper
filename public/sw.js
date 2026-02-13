@@ -37,6 +37,17 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
+  // Skip caching for Firebase API requests (auth, firestore, analytics)
+  if (
+    url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('firebaseio.com') ||
+    url.hostname.includes('firestore.googleapis.com') ||
+    url.hostname.includes('identitytoolkit.googleapis.com') ||
+    url.hostname.includes('securetoken.googleapis.com')
+  ) {
+    return;
+  }
+
   // For navigation requests (HTML pages): network-first with cache fallback
   if (event.request.mode === 'navigate') {
     event.respondWith(

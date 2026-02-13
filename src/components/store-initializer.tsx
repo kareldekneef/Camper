@@ -2,16 +2,24 @@
 
 import { useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth-context';
+import { useFirestoreSync } from '@/lib/use-firestore-sync';
 
 export function StoreInitializer({ children }: { children: React.ReactNode }) {
   const initialize = useAppStore((s) => s.initialize);
   const initialized = useAppStore((s) => s.initialized);
+  const { user, loading: authLoading } = useAuth();
 
+  // Initialize localStorage data (seed data on first run)
   useEffect(() => {
     initialize();
   }, [initialize]);
 
-  if (!initialized) {
+  // Start Firestore sync when user is authenticated
+  useFirestoreSync(user);
+
+  // Wait for both localStorage hydration AND auth state resolution
+  if (!initialized || authLoading) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center">
         <div className="text-center">

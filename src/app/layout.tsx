@@ -5,6 +5,7 @@ import { AppShell } from '@/components/app-shell';
 import { StoreInitializer } from '@/components/store-initializer';
 import { ServiceWorkerRegister } from '@/components/sw-register';
 import { ThemeProvider } from '@/components/theme-provider';
+import { AuthProvider } from '@/lib/auth-context';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -49,11 +50,13 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ServiceWorkerRegister />
-        <ThemeProvider>
-          <StoreInitializer>
-            <AppShell>{children}</AppShell>
-          </StoreInitializer>
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <StoreInitializer>
+              <AppShell>{children}</AppShell>
+            </StoreInitializer>
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );

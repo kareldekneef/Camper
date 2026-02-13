@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -11,21 +12,53 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Download, Upload, Trash2, RotateCcw, Sun, Moon, Monitor } from 'lucide-react';
+import { Download, Upload, Trash2, RotateCcw, Sun, Moon, Monitor, Cloud, LogOut } from 'lucide-react';
 import { defaultCategories, defaultMasterItems } from '@/lib/seed-data';
 import { useTheme } from '@/components/theme-provider';
+import { useAuth } from '@/lib/auth-context';
+import { clearFirestoreData } from '@/lib/firestore-sync';
+import { GoogleIcon } from '@/components/google-icon';
 import { cn } from '@/lib/utils';
 
 export default function SettingsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<string>('');
+  const [authError, setAuthError] = useState<string>('');
+  const [signingIn, setSigningIn] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { user, signInWithGoogle, signOut } = useAuth();
+
+  const handleSignIn = async () => {
+    setAuthError('');
+    setSigningIn(true);
+    try {
+      await signInWithGoogle();
+    } catch {
+      setAuthError('Inloggen mislukt. Probeer opnieuw.');
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   const handleExport = () => {
-    const raw = localStorage.getItem('camperpack-storage');
-    if (!raw) return;
-    const blob = new Blob([raw], { type: 'application/json' });
+    const state = useAppStore.getState();
+    const exportData = {
+      state: {
+        categories: state.categories,
+        masterItems: state.masterItems,
+        trips: state.trips,
+        tripItems: state.tripItems,
+        initialized: state.initialized,
+      },
+      version: 2,
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -44,10 +77,21 @@ export default function SettingsPage() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
-          const data = JSON.parse(ev.target?.result as string);
-          localStorage.setItem('camperpack-storage', JSON.stringify(data));
-          setImportStatus('Import gelukt! Pagina wordt herladen...');
-          setTimeout(() => window.location.reload(), 1000);
+          const raw = JSON.parse(ev.target?.result as string);
+          // Support both v1 (raw localStorage) and v2 (structured) formats
+          const data = raw.version === 2 ? raw.state : raw.state || raw;
+          if (data.categories && data.masterItems) {
+            useAppStore.setState({
+              categories: data.categories,
+              masterItems: data.masterItems,
+              trips: data.trips || [],
+              tripItems: data.tripItems || [],
+            });
+            setImportStatus('Import gelukt!');
+            setTimeout(() => setImportStatus(''), 2500);
+          } else {
+            setImportStatus('Ongeldig bestand. Verwacht een CamperPack backup.');
+          }
         } catch {
           setImportStatus('Fout bij import. Controleer het bestand.');
         }
@@ -65,7 +109,14 @@ export default function SettingsPage() {
     setShowResetConfirm(false);
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
+    if (user) {
+      try {
+        await clearFirestoreData(user.uid);
+      } catch (error) {
+        console.error('Failed to clear Firestore data:', error);
+      }
+    }
     localStorage.removeItem('camperpack-storage');
     window.location.reload();
   };
@@ -83,6 +134,62 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-4">
+        {/* Account */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Account</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {user ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  {user.photoURL && (
+                    <img
+                      src={user.photoURL}
+                      alt=""
+                      className="h-10 w-10 rounded-full"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{user.displayName}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  </div>
+                  <Badge variant="secondary" className="text-xs gap-1 shrink-0">
+                    <Cloud className="h-3 w-3" />
+                    Sync
+                  </Badge>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Uitloggen
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Log in om je gegevens te synchroniseren tussen apparaten.
+                </p>
+                <Button
+                  className="w-full gap-2"
+                  onClick={handleSignIn}
+                  disabled={signingIn}
+                >
+                  <GoogleIcon className="h-4 w-4" />
+                  {signingIn ? 'Bezig met inloggen...' : 'Inloggen met Google'}
+                </Button>
+                {authError && (
+                  <p className="text-sm text-destructive">{authError}</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Theme */}
         <Card>
           <CardHeader className="pb-3">
@@ -180,7 +287,9 @@ export default function SettingsPage() {
                   <DialogTitle>Alle gegevens wissen?</DialogTitle>
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground">
-                  Dit verwijdert al je trips, items en instellingen. Dit kan niet ongedaan worden. Maak eerst een backup!
+                  Dit verwijdert al je trips, items en instellingen.
+                  {user && ' Ook je cloudgegevens worden verwijderd.'}
+                  {' '}Dit kan niet ongedaan worden. Maak eerst een backup!
                 </p>
                 <div className="flex gap-2 justify-end">
                   <Button variant="outline" onClick={() => setShowClearConfirm(false)}>
@@ -196,7 +305,7 @@ export default function SettingsPage() {
         </Card>
 
         <div className="text-center text-xs text-muted-foreground py-4">
-          CamperPack v4.0 — Gebouwd met ❤️ voor camperreizen
+          CamperPack v5.0 — Gebouwd met ❤️ voor camperreizen
         </div>
       </div>
     </div>
