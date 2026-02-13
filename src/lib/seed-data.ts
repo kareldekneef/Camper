@@ -1,0 +1,181 @@
+import { Category, MasterItem } from './types';
+import { v4 as uuid } from 'uuid';
+
+export const defaultCategories: Category[] = [
+  { id: 'cat-shopping', name: 'Shopping / Voorbereiding', icon: '🛒', sortOrder: 0 },
+  { id: 'cat-camper', name: 'Camper & Uitrusting', icon: '🚐', sortOrder: 1 },
+  { id: 'cat-clothing', name: 'Kleding & Persoonlijk', icon: '👕', sortOrder: 2 },
+  { id: 'cat-food-breakfast', name: 'Ontbijt', icon: '🥐', sortOrder: 3 },
+  { id: 'cat-food-lunch', name: 'Lunch / Diner', icon: '🥩', sortOrder: 4 },
+  { id: 'cat-food-snacks', name: 'Snacks & Apero', icon: '🍫', sortOrder: 5 },
+  { id: 'cat-food-drinks', name: 'Dranken', icon: '🥂', sortOrder: 6 },
+  { id: 'cat-electronics', name: 'Electronica & Entertainment', icon: '📦', sortOrder: 7 },
+  { id: 'cat-outdoor', name: 'Buitenleven & Recreatie', icon: '🏕️', sortOrder: 8 },
+  { id: 'cat-cleaning', name: 'Schoonmaak & Hygiëne', icon: '🧹', sortOrder: 9 },
+  { id: 'cat-extra', name: 'Extra (meer dan 2 personen)', icon: '🛏️', sortOrder: 10 },
+];
+
+function item(
+  name: string,
+  categoryId: string,
+  conditions: MasterItem['conditions'] = {}
+): MasterItem {
+  return { id: uuid(), name, categoryId, conditions };
+}
+
+export const defaultMasterItems: MasterItem[] = [
+  // Shopping / Voorbereiding
+  item('Batterijen voor alarm', 'cat-shopping'),
+  item('Painkillers', 'cat-shopping'),
+  item('Gaviscon', 'cat-shopping'),
+
+  // Camper & Uitrusting
+  item('Watercontainer voor koffie', 'cat-camper'),
+  item('EHBO-kit', 'cat-camper'),
+  item('Blauw product toilet', 'cat-camper'),
+  item('Handdoeken voor vaat', 'cat-camper'),
+  item('Toiletpapier', 'cat-camper'),
+  item('Keukenpapier', 'cat-camper'),
+  item('Water vullen', 'cat-camper'),
+  item('AdBlue check', 'cat-camper'),
+  item('Hout', 'cat-camper'),
+  item('Solo stove', 'cat-camper'),
+  item('Reserve zekeringen / lampjes', 'cat-camper'),
+  item('Vaatwasmiddel / spullen', 'cat-camper'),
+  item('Gas check', 'cat-camper'),
+  item('Multitool of klein gereedschap', 'cat-camper'),
+  item('Brandblusser / blusdeken', 'cat-camper'),
+  item('Zaklamp of hoofdlamp', 'cat-camper'),
+  item('Levelblokken', 'cat-camper'),
+  item('Verlengsnoer + CEE verloopstekker', 'cat-camper'),
+  item('Ladder', 'cat-camper'),
+  item('Camping car-card / ACSI card', 'cat-camper'),
+
+  // Kleding & Persoonlijk
+  item('Regenjassen', 'cat-clothing'),
+  item('Wandelstokken', 'cat-clothing', { activities: ['hiking'] }),
+  item('Wandelschoenen', 'cat-clothing', { activities: ['hiking'] }),
+  item('Ondergoed en sokken', 'cat-clothing'),
+  item('Earplugs', 'cat-clothing'),
+  item('Medicatie', 'cat-clothing'),
+  item('Petten / muts', 'cat-clothing'),
+  item('Quick dry towels', 'cat-clothing'),
+  item('Jeans', 'cat-clothing'),
+  item('Pull / trui', 'cat-clothing'),
+  item('Warme kledij', 'cat-clothing', { weather: ['cold', 'mixed'] }),
+  item('Toiletzak', 'cat-clothing'),
+  item('Slaapmasker', 'cat-clothing'),
+  item('Mini-wasmiddel', 'cat-clothing'),
+  item('Waslijn + wasspelden', 'cat-clothing'),
+  item('Insectenspray', 'cat-clothing', { weather: ['hot', 'mixed'] }),
+  item('Zonnecrème', 'cat-clothing', { weather: ['hot', 'mixed'] }),
+  item('Zonnebril', 'cat-clothing'),
+  item('Waterschoenen', 'cat-clothing', { activities: ['swimming', 'surfing'] }),
+  item('Slippers of sandalen', 'cat-clothing'),
+  item('Lichte kledij', 'cat-clothing', { weather: ['hot', 'mixed'] }),
+  item('Zwembroek', 'cat-clothing', { weather: ['hot', 'mixed'], activities: ['swimming', 'surfing'] }),
+  item('Thermisch ondergoed', 'cat-clothing', { weather: ['cold'] }),
+  item('Handschoenen', 'cat-clothing', { weather: ['cold'] }),
+  item('Dikke sokken', 'cat-clothing', { weather: ['cold'] }),
+
+  // Ontbijt
+  item('Yoghurt', 'cat-food-breakfast'),
+  item('Chocomelk', 'cat-food-breakfast'),
+  item('Sandwich brood', 'cat-food-breakfast'),
+  item('Houdbare melk of melkpoeder', 'cat-food-breakfast'),
+  item('Ham', 'cat-food-breakfast'),
+  item('Kaas', 'cat-food-breakfast'),
+  item('Thee', 'cat-food-breakfast'),
+  item('Koffie', 'cat-food-breakfast'),
+  item('Confituur', 'cat-food-breakfast'),
+  item('Granola', 'cat-food-breakfast'),
+  item('Boter', 'cat-food-breakfast'),
+  item('Bacon', 'cat-food-breakfast'),
+  item('Eieren', 'cat-food-breakfast'),
+
+  // Lunch / Diner
+  item('BBQ saus', 'cat-food-lunch'),
+  item('Peper saus', 'cat-food-lunch'),
+  item('Mayonaise', 'cat-food-lunch'),
+  item('Olie', 'cat-food-lunch'),
+  item('Diepvries eten (soep, saus)', 'cat-food-lunch'),
+  item('Wraps', 'cat-food-lunch'),
+  item('Blikgroenten / soep / bonen', 'cat-food-lunch'),
+  item('Pasta / rijst', 'cat-food-lunch'),
+  item('Provençaalse kruiden', 'cat-food-lunch'),
+  item('Andere sausen', 'cat-food-lunch'),
+
+  // Snacks & Apero
+  item('Chocolade', 'cat-food-snacks'),
+  item('Koekjes', 'cat-food-snacks'),
+  item('Hapjes', 'cat-food-snacks'),
+  item('Olijven', 'cat-food-snacks'),
+  item('Selderijzout', 'cat-food-snacks'),
+  item('Noten of gedroogd fruit', 'cat-food-snacks'),
+  item('Mosterd', 'cat-food-snacks'),
+  item('Chips', 'cat-food-snacks'),
+  item('IJs / ijscrème', 'cat-food-snacks'),
+
+  // Dranken
+  item('Cola zero', 'cat-food-drinks'),
+  item('IJsblokjes', 'cat-food-drinks'),
+  item('Whiskey', 'cat-food-drinks'),
+  item('Rum', 'cat-food-drinks'),
+  item('Rode wijn', 'cat-food-drinks'),
+  item('Bier', 'cat-food-drinks'),
+  item('Champagne / cava', 'cat-food-drinks'),
+  item('Baileys', 'cat-food-drinks'),
+  item('Cola', 'cat-food-drinks'),
+  item('Rosé wijn', 'cat-food-drinks'),
+  item('Witte wijn', 'cat-food-drinks'),
+  item('Amaretto', 'cat-food-drinks'),
+  item('Water', 'cat-food-drinks'),
+
+  // Electronica & Entertainment
+  item('Waterdichte rugzak', 'cat-electronics'),
+  item('Kleine dagrugzak', 'cat-electronics'),
+  item('E-reader', 'cat-electronics'),
+  item('Laptop', 'cat-electronics'),
+  item('Hoofdtelefoon', 'cat-electronics'),
+  item('Kabels / opladers', 'cat-electronics'),
+  item('Beamer', 'cat-electronics'),
+  item('Powerbank', 'cat-electronics'),
+  item('Boeken', 'cat-electronics'),
+
+  // Buitenleven & Recreatie
+  item('Zijwand', 'cat-outdoor'),
+  item('Zonnescherm', 'cat-outdoor', { weather: ['hot', 'mixed'] }),
+  item('Reisdocumenten (ID, rijbewijs, verzekering)', 'cat-outdoor'),
+  item('Fietsen', 'cat-outdoor', { activities: ['cycling'] }),
+  item('Fietsgerief', 'cat-outdoor', { activities: ['cycling'] }),
+  item('Petanque', 'cat-outdoor', { activities: ['relaxation'] }),
+  item('Kubb', 'cat-outdoor', { activities: ['relaxation'] }),
+  item('Camera + statief + tas', 'cat-outdoor', { activities: ['photography'] }),
+  item('Opvouwbare boodschappentas', 'cat-outdoor'),
+  item('Diepvriestas', 'cat-outdoor'),
+  item('Vislijnen', 'cat-outdoor', { activities: ['fishing'] }),
+  item('Visgerief', 'cat-outdoor', { activities: ['fishing'] }),
+  item('Speelgoed', 'cat-outdoor', { minPeople: 3 }),
+  item('Grill / BBQ', 'cat-outdoor'),
+  item('Drinkflessen', 'cat-outdoor'),
+
+  // Schoonmaak & Hygiëne
+  item('Handgel', 'cat-cleaning'),
+  item('Allesreiniger', 'cat-cleaning'),
+  item('Vuilniszakjes', 'cat-cleaning'),
+  item('Kuisproduct', 'cat-cleaning'),
+  item('Wet wipes', 'cat-cleaning'),
+  item('Opvouwbare afwasbak of teil', 'cat-cleaning'),
+  item('Afwasborstel / spons', 'cat-cleaning'),
+
+  // Extra (meer dan 2 personen)
+  item('Isolatie voor bovenste bed', 'cat-extra', { minPeople: 3 }),
+  item('Extra tafel', 'cat-extra', { minPeople: 3 }),
+  item('Extra stoelen', 'cat-extra', { minPeople: 3 }),
+  item('Hoofdkussens', 'cat-extra', { minPeople: 3 }),
+  item('Onderlaken', 'cat-extra', { minPeople: 3 }),
+  item('Dekens / dons / slaapzak', 'cat-extra', { minPeople: 3 }),
+  item('Tent', 'cat-extra', { minPeople: 3 }),
+  item('Matras', 'cat-extra', { minPeople: 3 }),
+  item('Pomp', 'cat-extra', { minPeople: 3 }),
+];
