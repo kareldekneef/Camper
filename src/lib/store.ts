@@ -54,6 +54,7 @@ interface AppState {
   updateTripItem: (itemId: string, updates: Partial<TripItem>) => void;
   deleteTripItem: (itemId: string) => void;
   saveTripItemToMaster: (itemId: string) => void;
+  uncheckAllTripItems: (tripId: string) => void;
 }
 
 function shouldIncludeItem(
@@ -285,6 +286,14 @@ export const useAppStore = create<AppState>()(
       deleteTripItem: (itemId) => {
         set({
           tripItems: get().tripItems.filter((ti) => ti.id !== itemId),
+        });
+      },
+
+      uncheckAllTripItems: (tripId) => {
+        set({
+          tripItems: get().tripItems.map((ti) =>
+            ti.tripId === tripId ? { ...ti, checked: false } : ti
+          ),
         });
       },
 

@@ -1,10 +1,11 @@
 'use client';
 
 import { use, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
-import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -21,6 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ArrowLeft,
   Plus,
@@ -33,11 +35,25 @@ import {
   CheckCircle2,
   Circle,
   X,
+  RotateCcw,
+  Edit2,
+  MessageSquare,
+  ShoppingCart,
+  AlertTriangle,
+  Check,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { temperatureIcons } from '@/lib/constants';
-import { TripItem } from '@/lib/types';
+import {
+  temperatureLabels,
+  temperatureIcons,
+  durationLabels,
+  activityLabels,
+  activityIcons,
+} from '@/lib/constants';
+import { TripItem, Activity, Duration, Temperature } from '@/lib/types';
+
+type FilterMode = 'all' | 'unchecked' | 'shopping' | 'forgotten';
 
 export default function TripDetailPage({
   params,
@@ -45,6 +61,7 @@ export default function TripDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const trips = useAppStore((s) => s.trips);
   const allTripItems = useAppStore((s) => s.tripItems);
   const categories = useAppStore((s) => s.categories);
@@ -55,12 +72,17 @@ export default function TripDetailPage({
   const deleteTripItem = useAppStore((s) => s.deleteTripItem);
   const saveTripItemToMaster = useAppStore((s) => s.saveTripItemToMaster);
   const updateTrip = useAppStore((s) => s.updateTrip);
+  const updateTripItem = useAppStore((s) => s.updateTripItem);
+  const uncheckAllTripItems = useAppStore((s) => s.uncheckAllTripItems);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [showAddItem, setShowAddItem] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [showEditTrip, setShowEditTrip] = useState(false);
+  const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
 
   if (!trip) {
     return (
@@ -82,11 +104,27 @@ export default function TripDetailPage({
     });
   };
 
+  // Shopping category ID
+  const shoppingCategoryId = categories.find(
+    (c) => c.name.toLowerCase().includes('shopping') || c.name.toLowerCase().includes('voorbereiding')
+  )?.id;
+
+  // Apply filter mode
+  let displayItems = tripItems;
+  if (filterMode === 'unchecked') {
+    displayItems = tripItems.filter((ti) => !ti.checked);
+  } else if (filterMode === 'shopping') {
+    displayItems = tripItems.filter((ti) => ti.categoryId === shoppingCategoryId && !ti.checked);
+  } else if (filterMode === 'forgotten') {
+    displayItems = tripItems.filter((ti) => !ti.checked);
+  }
+
+  // Apply search
   const filteredItems = searchQuery
-    ? tripItems.filter((ti) =>
+    ? displayItems.filter((ti) =>
         ti.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : tripItems;
+    : displayItems;
 
   const groupedItems = new Map<string, TripItem[]>();
   for (const item of filteredItems) {
@@ -101,6 +139,7 @@ export default function TripDetailPage({
 
   const totalChecked = tripItems.filter((ti) => ti.checked).length;
   const totalItems = tripItems.length;
+  const totalForgotten = tripItems.filter((ti) => !ti.checked).length;
   const progress = totalItems > 0 ? (totalChecked / totalItems) * 100 : 0;
 
   const handleAddItem = () => {
@@ -118,6 +157,7 @@ export default function TripDetailPage({
 
   return (
     <div className="mx-auto max-w-lg px-4 pt-6">
+      {/* Header */}
       <div className="mb-4 flex items-center gap-3">
         <Link href="/">
           <Button variant="ghost" size="icon">
@@ -131,6 +171,14 @@ export default function TripDetailPage({
             <span>{temperatureIcons[trip.temperature]}</span>
           </div>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setShowEditTrip(true)}
+        >
+          <Edit2 className="h-4 w-4" />
+        </Button>
         <Select
           value={trip.status}
           onValueChange={(v) => updateTrip(trip.id, { status: v as typeof trip.status })}
@@ -148,6 +196,7 @@ export default function TripDetailPage({
         </Select>
       </div>
 
+      {/* Progress */}
       <div className="mb-4 space-y-1">
         <div className="flex justify-between text-sm">
           <span className="font-medium">{totalChecked} / {totalItems} ingepakt</span>
@@ -156,6 +205,50 @@ export default function TripDetailPage({
         <Progress value={progress} className="h-3" />
       </div>
 
+      {/* Forgotten warning when trip is completed */}
+      {trip.status === 'completed' && totalForgotten > 0 && filterMode !== 'forgotten' && (
+        <button
+          onClick={() => setFilterMode('forgotten')}
+          className="mb-4 w-full flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{totalForgotten} item{totalForgotten !== 1 ? 's' : ''} niet ingepakt — tik om te bekijken</span>
+        </button>
+      )}
+
+      {/* Filter buttons */}
+      <div className="mb-4 flex gap-2 overflow-x-auto">
+        <FilterButton
+          active={filterMode === 'all'}
+          onClick={() => setFilterMode('all')}
+          icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+          label="Alles"
+        />
+        <FilterButton
+          active={filterMode === 'unchecked'}
+          onClick={() => setFilterMode('unchecked')}
+          icon={<Circle className="h-3.5 w-3.5" />}
+          label="Nog in te pakken"
+        />
+        {shoppingCategoryId && (
+          <FilterButton
+            active={filterMode === 'shopping'}
+            onClick={() => setFilterMode('shopping')}
+            icon={<ShoppingCart className="h-3.5 w-3.5" />}
+            label="Shopping"
+          />
+        )}
+        {trip.status === 'completed' && (
+          <FilterButton
+            active={filterMode === 'forgotten'}
+            onClick={() => setFilterMode('forgotten')}
+            icon={<AlertTriangle className="h-3.5 w-3.5" />}
+            label="Vergeten"
+          />
+        )}
+      </div>
+
+      {/* Search */}
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
@@ -174,6 +267,7 @@ export default function TripDetailPage({
         )}
       </div>
 
+      {/* Category groups */}
       <div className="space-y-2 pb-4">
         {sortedCategories.map((category) => {
           const items = groupedItems.get(category.id) || [];
@@ -206,6 +300,9 @@ export default function TripDetailPage({
                       item={item}
                       onToggle={() => toggleTripItem(item.id)}
                       onDelete={() => deleteTripItem(item.id)}
+                      onUpdateNotes={(notes) =>
+                        updateTripItem(item.id, { notes })
+                      }
                       onSaveToMaster={
                         item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
                       }
@@ -216,21 +313,34 @@ export default function TripDetailPage({
             </div>
           );
         })}
+
+        {filteredItems.length === 0 && (
+          <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+            {filterMode === 'forgotten'
+              ? 'Alles was ingepakt! Goed gedaan! 🎉'
+              : filterMode === 'shopping'
+              ? 'Alle shopping items zijn afgevinkt! ✅'
+              : filterMode === 'unchecked'
+              ? 'Alles is ingepakt! 🎉'
+              : 'Geen items gevonden'}
+          </div>
+        )}
       </div>
 
-      <Dialog open={showAddItem} onOpenChange={setShowAddItem}>
-        <DialogTrigger asChild>
-          <Button variant="outline" className="w-full mb-6 gap-2">
-            <Plus className="h-4 w-4" />
-            Item toevoegen
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Item toevoegen</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
+      {/* Action buttons */}
+      <div className="space-y-2 mb-6">
+        <Dialog open={showAddItem} onOpenChange={setShowAddItem}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="w-full gap-2">
+              <Plus className="h-4 w-4" />
+              Item toevoegen
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Item toevoegen</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
               <Input
                 value={newItemName}
                 onChange={(e) => setNewItemName(e.target.value)}
@@ -239,28 +349,240 @@ export default function TripDetailPage({
                   if (e.key === 'Enter') handleAddItem();
                 }}
               />
+              <Select value={newItemCategory} onValueChange={setNewItemCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Kies categorie" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                    .map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.icon} {c.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleAddItem}
+                className="w-full"
+                disabled={!newItemName.trim() || !newItemCategory}
+              >
+                Toevoegen
+              </Button>
             </div>
-            <Select value={newItemCategory} onValueChange={setNewItemCategory}>
-              <SelectTrigger>
-                <SelectValue placeholder="Kies categorie" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories
-                  .sort((a, b) => a.sortOrder - b.sortOrder)
-                  .map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.icon} {c.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Button
-              onClick={handleAddItem}
-              className="w-full"
-              disabled={!newItemName.trim() || !newItemCategory}
-            >
-              Toevoegen
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showUncheckConfirm} onOpenChange={setShowUncheckConfirm}>
+          <DialogTrigger asChild>
+            <Button variant="ghost" className="w-full gap-2 text-muted-foreground">
+              <RotateCcw className="h-4 w-4" />
+              Alles uitvinken
             </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Alles uitvinken?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Alle items worden weer als &quot;niet ingepakt&quot; gemarkeerd. Handig voor een retourtrip.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowUncheckConfirm(false)}>
+                Annuleren
+              </Button>
+              <Button
+                onClick={() => {
+                  uncheckAllTripItems(id);
+                  setShowUncheckConfirm(false);
+                }}
+              >
+                Uitvinken
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Edit trip dialog */}
+      <EditTripDialog
+        trip={trip}
+        open={showEditTrip}
+        onOpenChange={setShowEditTrip}
+      />
+    </div>
+  );
+}
+
+// Filter button component
+function FilterButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
+        active
+          ? 'border-primary bg-primary/10 text-primary'
+          : 'border-border text-muted-foreground hover:border-primary/50'
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+// Item row with notes support
+function ItemRow({
+  item,
+  onToggle,
+  onDelete,
+  onUpdateNotes,
+  onSaveToMaster,
+}: {
+  item: TripItem;
+  onToggle: () => void;
+  onDelete: () => void;
+  onUpdateNotes: (notes: string) => void;
+  onSaveToMaster?: () => void;
+}) {
+  const [showActions, setShowActions] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [noteText, setNoteText] = useState(item.notes || '');
+
+  const handleSaveNotes = () => {
+    onUpdateNotes(noteText.trim());
+    setShowNotes(false);
+  };
+
+  return (
+    <div className="border-b last:border-b-0">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-3 min-h-[44px] text-left"
+        >
+          {item.checked ? (
+            <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+          ) : (
+            <Circle className="h-5 w-5 text-muted-foreground shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <span
+              className={cn(
+                'text-sm',
+                item.checked && 'line-through text-muted-foreground'
+              )}
+            >
+              {item.name}
+            </span>
+            {item.notes && (
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                💬 {item.notes}
+              </p>
+            )}
+          </div>
+          {item.isCustom && (
+            <Badge variant="outline" className="text-[10px] shrink-0">
+              custom
+            </Badge>
+          )}
+        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowActions(!showActions)}
+            className="p-1 text-muted-foreground hover:text-foreground"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+          {showActions && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setShowActions(false)}
+              />
+              <div className="absolute right-0 top-8 z-20 rounded-lg border bg-background shadow-lg py-1 min-w-[180px]">
+                <button
+                  onClick={() => {
+                    setShowNotes(true);
+                    setShowActions(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  {item.notes ? 'Notitie bewerken' : 'Notitie toevoegen'}
+                </button>
+                {onSaveToMaster && (
+                  <button
+                    onClick={() => {
+                      onSaveToMaster();
+                      setShowActions(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+                  >
+                    <Save className="h-4 w-4" />
+                    Opslaan in standaardlijst
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    onDelete();
+                    setShowActions(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Verwijderen
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Notes dialog */}
+      <Dialog open={showNotes} onOpenChange={setShowNotes}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Notitie — {item.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="bv. Rode jas, niet de blauwe"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveNotes();
+              }}
+            />
+            <div className="flex gap-2">
+              <Button onClick={handleSaveNotes} className="flex-1">
+                Opslaan
+              </Button>
+              {item.notes && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onUpdateNotes('');
+                    setNoteText('');
+                    setShowNotes(false);
+                  }}
+                >
+                  Wissen
+                </Button>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -268,84 +590,166 @@ export default function TripDetailPage({
   );
 }
 
-function ItemRow({
-  item,
-  onToggle,
-  onDelete,
-  onSaveToMaster,
+// Edit trip dialog
+function EditTripDialog({
+  trip,
+  open,
+  onOpenChange,
 }: {
-  item: TripItem;
-  onToggle: () => void;
-  onDelete: () => void;
-  onSaveToMaster?: () => void;
+  trip: NonNullable<ReturnType<typeof useAppStore.getState>['trips'][number]>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [showActions, setShowActions] = useState(false);
+  const updateTrip = useAppStore((s) => s.updateTrip);
+
+  const [name, setName] = useState(trip.name);
+  const [destination, setDestination] = useState(trip.destination);
+  const [startDate, setStartDate] = useState(trip.startDate);
+  const [endDate, setEndDate] = useState(trip.endDate);
+  const [temperature, setTemperature] = useState<Temperature>(trip.temperature);
+  const [duration, setDuration] = useState<Duration>(trip.duration);
+  const [peopleCount, setPeopleCount] = useState(trip.peopleCount);
+  const [activities, setActivities] = useState<Activity[]>(trip.activities);
+  const [notes, setNotes] = useState(trip.notes || '');
+
+  const allActivities = Object.keys(activityLabels) as Activity[];
+
+  const toggleActivity = (activity: Activity) => {
+    setActivities((prev) =>
+      prev.includes(activity)
+        ? prev.filter((a) => a !== activity)
+        : [...prev, activity]
+    );
+  };
+
+  const handleSave = () => {
+    updateTrip(trip.id, {
+      name: name.trim() || trip.name,
+      destination: destination.trim(),
+      startDate,
+      endDate,
+      temperature,
+      duration,
+      peopleCount,
+      activities,
+      notes: notes.trim() || undefined,
+    });
+    onOpenChange(false);
+  };
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2.5 border-b last:border-b-0">
-      <button
-        onClick={onToggle}
-        className="flex-1 flex items-center gap-3 min-h-[44px] text-left"
-      >
-        {item.checked ? (
-          <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-        ) : (
-          <Circle className="h-5 w-5 text-muted-foreground shrink-0" />
-        )}
-        <span
-          className={cn(
-            'text-sm',
-            item.checked && 'line-through text-muted-foreground'
-          )}
-        >
-          {item.name}
-        </span>
-        {item.isCustom && (
-          <Badge variant="outline" className="text-[10px] ml-auto shrink-0">
-            custom
-          </Badge>
-        )}
-      </button>
-      <div className="relative">
-        <button
-          onClick={() => setShowActions(!showActions)}
-          className="p-1 text-muted-foreground hover:text-foreground"
-        >
-          <MoreVertical className="h-4 w-4" />
-        </button>
-        {showActions && (
-          <>
-            <div
-              className="fixed inset-0 z-10"
-              onClick={() => setShowActions(false)}
-            />
-            <div className="absolute right-0 top-8 z-20 rounded-lg border bg-background shadow-lg py-1 min-w-[160px]">
-              {onSaveToMaster && (
-                <button
-                  onClick={() => {
-                    onSaveToMaster();
-                    setShowActions(false);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-                >
-                  <Save className="h-4 w-4" />
-                  Opslaan in standaardlijst
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  onDelete();
-                  setShowActions(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent"
-              >
-                <Trash2 className="h-4 w-4" />
-                Verwijderen
-              </button>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Trip bewerken</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Naam</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Bestemming</Label>
+            <Input value={destination} onChange={(e) => setDestination(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Vertrekdatum</Label>
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
-          </>
-        )}
-      </div>
-    </div>
+            <div className="space-y-2">
+              <Label>Terugkomst</Label>
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Temperatuur</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.keys(temperatureLabels) as Temperature[]).map((temp) => (
+                <button
+                  key={temp}
+                  type="button"
+                  onClick={() => setTemperature(temp)}
+                  className={cn(
+                    'rounded-lg border p-2 text-center text-xs transition-colors',
+                    temperature === temp
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border hover:border-primary/50'
+                  )}
+                >
+                  <div className="text-lg">{temperatureIcons[temp]}</div>
+                  <div className="font-medium">{temperatureLabels[temp].split(' ')[0]}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Duur</Label>
+            <Select value={duration} onValueChange={(v) => setDuration(v as Duration)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(durationLabels) as Duration[]).map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {durationLabels[d]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Aantal personen</Label>
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="outline" size="icon" onClick={() => setPeopleCount(Math.max(1, peopleCount - 1))}>-</Button>
+              <span className="w-8 text-center text-lg font-medium">{peopleCount}</span>
+              <Button type="button" variant="outline" size="icon" onClick={() => setPeopleCount(Math.min(10, peopleCount + 1))}>+</Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Activiteiten</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {allActivities.map((activity) => {
+                const isSelected = activities.includes(activity);
+                return (
+                  <button
+                    key={activity}
+                    type="button"
+                    onClick={() => toggleActivity(activity)}
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg border p-2 text-xs transition-colors',
+                      isSelected
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border hover:border-primary/50'
+                    )}
+                  >
+                    <span>{activityIcons[activity]}</span>
+                    <span className="font-medium">{activityLabels[activity]}</span>
+                    {isSelected && <Check className="ml-auto h-3 w-3" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Trip notities</Label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="bv. Lessen geleerd, opmerkingen..."
+            />
+          </div>
+
+          <Button onClick={handleSave} className="w-full">
+            Opslaan
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
