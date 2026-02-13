@@ -24,6 +24,7 @@ import {
 import {
   ArrowLeft,
   Plus,
+  Minus,
   ChevronDown,
   ChevronRight,
   Search,
@@ -42,6 +43,7 @@ import {
   Share2,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
@@ -73,12 +75,14 @@ export default function TripDetailPage({
   const updateTrip = useAppStore((s) => s.updateTrip);
   const updateTripItem = useAppStore((s) => s.updateTripItem);
   const uncheckAllTripItems = useAppStore((s) => s.uncheckAllTripItems);
+  const reorderTripItems = useAppStore((s) => s.reorderTripItems);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [showAddItem, setShowAddItem] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
+  const [newItemQuantity, setNewItemQuantity] = useState(1);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
@@ -133,6 +137,14 @@ export default function TripDetailPage({
     groupedItems.set(item.categoryId, existing);
   }
 
+  // Sort items within each category by sortOrder
+  for (const [catId, items] of groupedItems) {
+    groupedItems.set(
+      catId,
+      items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    );
+  }
+
   const sortedCategories = categories
     .filter((c) => groupedItems.has(c.id))
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -144,8 +156,9 @@ export default function TripDetailPage({
 
   const handleAddItem = () => {
     if (!newItemName.trim() || !newItemCategory) return;
-    addTripItem(id, newItemName.trim(), newItemCategory);
+    addTripItem(id, newItemName.trim(), newItemCategory, newItemQuantity);
     setNewItemName('');
+    setNewItemQuantity(1);
     setShowAddItem(false);
   };
 
@@ -164,10 +177,14 @@ export default function TripDetailPage({
     text += `✅ ${totalChecked}/${totalItems} ingepakt (${Math.round(progress)}%)\n\n`;
 
     for (const cat of sortedCats) {
-      const items = tripItems.filter((ti) => ti.categoryId === cat.id);
+      const items = tripItems
+        .filter((ti) => ti.categoryId === cat.id)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
       text += `${cat.icon} ${cat.name}\n`;
       for (const item of items) {
+        const qty = item.quantity ?? 1;
         text += `  ${item.checked ? '✅' : '⬜'} ${item.name}`;
+        if (qty > 1) text += ` ×${qty}`;
         if (item.notes) text += ` (${item.notes})`;
         text += '\n';
       }
@@ -267,7 +284,7 @@ export default function TripDetailPage({
       {trip.status === 'completed' && totalForgotten > 0 && filterMode !== 'forgotten' && (
         <button
           onClick={() => setFilterMode('forgotten')}
-          className="mb-4 w-full flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800"
+          className="mb-4 w-full flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>{totalForgotten} item{totalForgotten !== 1 ? 's' : ''} niet ingepakt — tik om te bekijken</span>
@@ -331,6 +348,7 @@ export default function TripDetailPage({
           const items = groupedItems.get(category.id) || [];
           const catChecked = items.filter((i) => i.checked).length;
           const isCollapsed = collapsedCategories.has(category.id);
+          const itemIds = items.map((i) => i.id);
 
           return (
             <div key={category.id} className="rounded-lg border">
@@ -352,20 +370,31 @@ export default function TripDetailPage({
 
               {!isCollapsed && (
                 <div className="border-t">
-                  {items.map((item) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      onToggle={() => toggleTripItem(item.id)}
-                      onDelete={() => deleteTripItem(item.id)}
-                      onUpdateNotes={(notes) =>
-                        updateTripItem(item.id, { notes })
-                      }
-                      onSaveToMaster={
-                        item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
-                      }
-                    />
-                  ))}
+                  <SortableList
+                    items={itemIds}
+                    onReorder={(orderedIds) =>
+                      reorderTripItems(id, category.id, orderedIds)
+                    }
+                  >
+                    {items.map((item) => (
+                      <SortableItem key={item.id} id={item.id}>
+                        <ItemRow
+                          item={item}
+                          onToggle={() => toggleTripItem(item.id)}
+                          onDelete={() => deleteTripItem(item.id)}
+                          onUpdateNotes={(notes) =>
+                            updateTripItem(item.id, { notes })
+                          }
+                          onUpdateQuantity={(quantity) =>
+                            updateTripItem(item.id, { quantity })
+                          }
+                          onSaveToMaster={
+                            item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
+                          }
+                        />
+                      </SortableItem>
+                    ))}
+                  </SortableList>
                 </div>
               )}
             </div>
@@ -421,6 +450,30 @@ export default function TripDetailPage({
                     ))}
                 </SelectContent>
               </Select>
+              <div className="space-y-2">
+                <Label>Aantal</Label>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setNewItemQuantity(Math.max(1, newItemQuantity - 1))}
+                  >
+                    <Minus className="h-3 w-3" />
+                  </Button>
+                  <span className="w-8 text-center font-medium">{newItemQuantity}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setNewItemQuantity(Math.min(99, newItemQuantity + 1))}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
               <Button
                 onClick={handleAddItem}
                 className="w-full"
@@ -509,23 +562,27 @@ function FilterButton({
   );
 }
 
-// Item row with notes support
+// Item row with notes, quantity, and drag handle support
 function ItemRow({
   item,
   onToggle,
   onDelete,
   onUpdateNotes,
+  onUpdateQuantity,
   onSaveToMaster,
 }: {
   item: TripItem;
   onToggle: () => void;
   onDelete: () => void;
   onUpdateNotes: (notes: string) => void;
+  onUpdateQuantity: (quantity: number) => void;
   onSaveToMaster?: () => void;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes || '');
+
+  const quantity = item.quantity ?? 1;
 
   const handleSaveNotes = () => {
     onUpdateNotes(noteText.trim());
@@ -534,7 +591,8 @@ function ItemRow({
 
   return (
     <div className="border-b last:border-b-0">
-      <div className="flex items-center gap-2 px-3 py-2.5">
+      <div className="flex items-center gap-1 px-2 py-2.5">
+        <DragHandle className="shrink-0 p-1" />
         <button
           onClick={onToggle}
           className="flex-1 flex items-center gap-3 min-h-[44px] text-left"
@@ -545,14 +603,21 @@ function ItemRow({
             <Circle className="h-5 w-5 text-muted-foreground shrink-0" />
           )}
           <div className="flex-1 min-w-0">
-            <span
-              className={cn(
-                'text-sm',
-                item.checked && 'line-through text-muted-foreground'
+            <div className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  'text-sm',
+                  item.checked && 'line-through text-muted-foreground'
+                )}
+              >
+                {item.name}
+              </span>
+              {quantity > 1 && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+                  ×{quantity}
+                </Badge>
               )}
-            >
-              {item.name}
-            </span>
+            </div>
             {item.notes && (
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
                 💬 {item.notes}
@@ -578,7 +643,27 @@ function ItemRow({
                 className="fixed inset-0 z-10"
                 onClick={() => setShowActions(false)}
               />
-              <div className="absolute right-0 top-8 z-20 rounded-lg border bg-background shadow-lg py-1 min-w-[180px]">
+              <div className="absolute right-0 top-8 z-20 rounded-lg border bg-background shadow-lg py-1 min-w-[200px]">
+                {/* Quantity adjuster */}
+                <div className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span>Aantal</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onUpdateQuantity(Math.max(1, quantity - 1))}
+                      className="h-6 w-6 rounded border flex items-center justify-center hover:bg-accent"
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <span className="w-5 text-center font-medium">{quantity}</span>
+                    <button
+                      onClick={() => onUpdateQuantity(Math.min(99, quantity + 1))}
+                      className="h-6 w-6 rounded border flex items-center justify-center hover:bg-accent"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+                <div className="border-t my-1" />
                 <button
                   onClick={() => {
                     setShowNotes(true);

@@ -13,6 +13,9 @@ export interface MasterItem {
     minPeople?: number;
     minDuration?: Duration;
   };
+  quantity?: number;    // default quantity (defaults to 1)
+  perPerson?: boolean;  // if true, multiply by peopleCount
+  sortOrder?: number;   // order within category
 }
 
 export interface Category {
@@ -47,4 +50,6 @@ export interface TripItem {
   checked: boolean;
   notes?: string;
   isCustom: boolean;
+  quantity?: number;    // calculated or manually adjusted (defaults to 1)
+  sortOrder?: number;   // order within category
 }

@@ -196,7 +196,7 @@ export default function SettingsPage() {
         </Card>
 
         <div className="text-center text-xs text-muted-foreground py-4">
-          CamperPack v3.0 — Gebouwd met ❤️ voor camperreizen
+          CamperPack v4.0 — Gebouwd met ❤️ voor camperreizen
         </div>
       </div>
     </div>

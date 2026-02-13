@@ -32,6 +32,7 @@ interface AppState {
   addMasterItem: (item: Omit<MasterItem, 'id'>) => void;
   updateMasterItem: (id: string, item: Partial<MasterItem>) => void;
   deleteMasterItem: (id: string) => void;
+  reorderMasterItems: (categoryId: string, orderedIds: string[]) => void;
 
   // Trips
   createTrip: (params: {
@@ -50,11 +51,12 @@ interface AppState {
 
   // Trip items
   toggleTripItem: (itemId: string) => void;
-  addTripItem: (tripId: string, name: string, categoryId: string) => void;
+  addTripItem: (tripId: string, name: string, categoryId: string, quantity?: number) => void;
   updateTripItem: (itemId: string, updates: Partial<TripItem>) => void;
   deleteTripItem: (itemId: string) => void;
   saveTripItemToMaster: (itemId: string) => void;
   uncheckAllTripItems: (tripId: string) => void;
+  reorderTripItems: (tripId: string, categoryId: string, orderedIds: string[]) => void;
 }
 
 function shouldIncludeItem(
@@ -87,6 +89,14 @@ function shouldIncludeItem(
   }
 
   return true;
+}
+
+function calculateQuantity(
+  masterItem: MasterItem,
+  peopleCount: number
+): number {
+  const base = masterItem.quantity ?? 1;
+  return masterItem.perPerson ? base * peopleCount : base;
 }
 
 export const useAppStore = create<AppState>()(
@@ -144,8 +154,19 @@ export const useAppStore = create<AppState>()(
 
       // Master items
       addMasterItem: (item) => {
+        const state = get();
+        const catItems = state.masterItems.filter(
+          (i) => i.categoryId === item.categoryId
+        );
+        const maxOrder = Math.max(
+          ...catItems.map((i) => i.sortOrder ?? 0),
+          -1
+        );
         set({
-          masterItems: [...get().masterItems, { ...item, id: uuid() }],
+          masterItems: [
+            ...state.masterItems,
+            { ...item, id: uuid(), sortOrder: maxOrder + 1 },
+          ],
         });
       },
 
@@ -163,6 +184,16 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      reorderMasterItems: (categoryId, orderedIds) => {
+        set({
+          masterItems: get().masterItems.map((item) => {
+            if (item.categoryId !== categoryId) return item;
+            const index = orderedIds.indexOf(item.id);
+            return index >= 0 ? { ...item, sortOrder: index } : item;
+          }),
+        });
+      },
+
       // Trips
       createTrip: (params) => {
         const state = get();
@@ -174,6 +205,7 @@ export const useAppStore = create<AppState>()(
           createdAt: new Date().toISOString(),
         };
 
+        let sortCounter = 0;
         const items: TripItem[] = state.masterItems
           .filter((mi) =>
             shouldIncludeItem(
@@ -192,6 +224,8 @@ export const useAppStore = create<AppState>()(
             categoryId: mi.categoryId,
             checked: false,
             isCustom: false,
+            quantity: calculateQuantity(mi, params.peopleCount),
+            sortOrder: sortCounter++,
           }));
 
         set({
@@ -259,10 +293,18 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      addTripItem: (tripId, name, categoryId) => {
+      addTripItem: (tripId, name, categoryId, quantity) => {
+        const state = get();
+        const catItems = state.tripItems.filter(
+          (ti) => ti.tripId === tripId && ti.categoryId === categoryId
+        );
+        const maxOrder = Math.max(
+          ...catItems.map((ti) => ti.sortOrder ?? 0),
+          -1
+        );
         set({
           tripItems: [
-            ...get().tripItems,
+            ...state.tripItems,
             {
               id: uuid(),
               tripId,
@@ -270,6 +312,8 @@ export const useAppStore = create<AppState>()(
               categoryId,
               checked: false,
               isCustom: true,
+              quantity: quantity ?? 1,
+              sortOrder: maxOrder + 1,
             },
           ],
         });
@@ -297,6 +341,16 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      reorderTripItems: (tripId, categoryId, orderedIds) => {
+        set({
+          tripItems: get().tripItems.map((ti) => {
+            if (ti.tripId !== tripId || ti.categoryId !== categoryId) return ti;
+            const index = orderedIds.indexOf(ti.id);
+            return index >= 0 ? { ...ti, sortOrder: index } : ti;
+          }),
+        });
+      },
+
       saveTripItemToMaster: (itemId) => {
         const item = get().tripItems.find((ti) => ti.id === itemId);
         if (!item || !item.isCustom) return;
@@ -309,6 +363,7 @@ export const useAppStore = create<AppState>()(
               name: item.name,
               categoryId: item.categoryId,
               conditions: {},
+              quantity: item.quantity,
             },
           ],
           tripItems: get().tripItems.map((ti) =>

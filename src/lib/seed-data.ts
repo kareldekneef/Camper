@@ -15,12 +15,29 @@ export const defaultCategories: Category[] = [
   { id: 'cat-extra', name: 'Extra (meer dan 2 personen)', icon: '🛏️', sortOrder: 10 },
 ];
 
+let sortCounter = 0;
+let lastCategoryId = '';
+
 function item(
   name: string,
   categoryId: string,
-  conditions: MasterItem['conditions'] = {}
+  conditions: MasterItem['conditions'] = {},
+  opts?: { quantity?: number; perPerson?: boolean }
 ): MasterItem {
-  return { id: uuid(), name, categoryId, conditions };
+  // Reset sort counter when category changes
+  if (categoryId !== lastCategoryId) {
+    sortCounter = 0;
+    lastCategoryId = categoryId;
+  }
+  return {
+    id: uuid(),
+    name,
+    categoryId,
+    conditions,
+    quantity: opts?.quantity,
+    perPerson: opts?.perPerson,
+    sortOrder: sortCounter++,
+  };
 }
 
 export const defaultMasterItems: MasterItem[] = [
@@ -33,8 +50,8 @@ export const defaultMasterItems: MasterItem[] = [
   item('Watercontainer voor koffie', 'cat-camper'),
   item('EHBO-kit', 'cat-camper'),
   item('Blauw product toilet', 'cat-camper'),
-  item('Handdoeken voor vaat', 'cat-camper'),
-  item('Toiletpapier', 'cat-camper'),
+  item('Handdoeken voor vaat', 'cat-camper', {}, { quantity: 2 }),
+  item('Toiletpapier', 'cat-camper', {}, { quantity: 2 }),
   item('Keukenpapier', 'cat-camper'),
   item('Water vullen', 'cat-camper'),
   item('AdBlue check', 'cat-camper'),
@@ -52,31 +69,31 @@ export const defaultMasterItems: MasterItem[] = [
   item('Camping car-card / ACSI card', 'cat-camper'),
 
   // Kleding & Persoonlijk
-  item('Regenjassen', 'cat-clothing'),
+  item('Regenjassen', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
   item('Wandelstokken', 'cat-clothing', { activities: ['hiking'] }),
-  item('Wandelschoenen', 'cat-clothing', { activities: ['hiking'] }),
-  item('Ondergoed en sokken', 'cat-clothing'),
-  item('Earplugs', 'cat-clothing'),
+  item('Wandelschoenen', 'cat-clothing', { activities: ['hiking'] }, { quantity: 1, perPerson: true }),
+  item('Ondergoed en sokken', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Earplugs', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
   item('Medicatie', 'cat-clothing'),
-  item('Petten / muts', 'cat-clothing'),
-  item('Quick dry towels', 'cat-clothing'),
-  item('Jeans', 'cat-clothing'),
-  item('Pull / trui', 'cat-clothing'),
-  item('Warme kledij', 'cat-clothing', { weather: ['cold', 'mixed'] }),
-  item('Toiletzak', 'cat-clothing'),
-  item('Slaapmasker', 'cat-clothing'),
+  item('Petten / muts', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Quick dry towels', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Jeans', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Pull / trui', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Warme kledij', 'cat-clothing', { weather: ['cold', 'mixed'] }, { quantity: 1, perPerson: true }),
+  item('Toiletzak', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Slaapmasker', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
   item('Mini-wasmiddel', 'cat-clothing'),
   item('Waslijn + wasspelden', 'cat-clothing'),
   item('Insectenspray', 'cat-clothing', { weather: ['hot', 'mixed'] }),
   item('Zonnecrème', 'cat-clothing', { weather: ['hot', 'mixed'] }),
-  item('Zonnebril', 'cat-clothing'),
-  item('Waterschoenen', 'cat-clothing', { activities: ['swimming', 'surfing'] }),
-  item('Slippers of sandalen', 'cat-clothing'),
-  item('Lichte kledij', 'cat-clothing', { weather: ['hot', 'mixed'] }),
-  item('Zwembroek', 'cat-clothing', { weather: ['hot', 'mixed'], activities: ['swimming', 'surfing'] }),
-  item('Thermisch ondergoed', 'cat-clothing', { weather: ['cold'] }),
-  item('Handschoenen', 'cat-clothing', { weather: ['cold'] }),
-  item('Dikke sokken', 'cat-clothing', { weather: ['cold'] }),
+  item('Zonnebril', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Waterschoenen', 'cat-clothing', { activities: ['swimming', 'surfing'] }, { quantity: 1, perPerson: true }),
+  item('Slippers of sandalen', 'cat-clothing', {}, { quantity: 1, perPerson: true }),
+  item('Lichte kledij', 'cat-clothing', { weather: ['hot', 'mixed'] }, { quantity: 1, perPerson: true }),
+  item('Zwembroek', 'cat-clothing', { weather: ['hot', 'mixed'], activities: ['swimming', 'surfing'] }, { quantity: 1, perPerson: true }),
+  item('Thermisch ondergoed', 'cat-clothing', { weather: ['cold'] }, { quantity: 1, perPerson: true }),
+  item('Handschoenen', 'cat-clothing', { weather: ['cold'] }, { quantity: 1, perPerson: true }),
+  item('Dikke sokken', 'cat-clothing', { weather: ['cold'] }, { quantity: 1, perPerson: true }),
 
   // Ontbijt
   item('Yoghurt', 'cat-food-breakfast'),
@@ -157,7 +174,7 @@ export const defaultMasterItems: MasterItem[] = [
   item('Visgerief', 'cat-outdoor', { activities: ['fishing'] }),
   item('Speelgoed', 'cat-outdoor', { minPeople: 3 }),
   item('Grill / BBQ', 'cat-outdoor'),
-  item('Drinkflessen', 'cat-outdoor'),
+  item('Drinkflessen', 'cat-outdoor', {}, { quantity: 1, perPerson: true }),
 
   // Schoonmaak & Hygiëne
   item('Handgel', 'cat-cleaning'),
@@ -172,9 +189,9 @@ export const defaultMasterItems: MasterItem[] = [
   item('Isolatie voor bovenste bed', 'cat-extra', { minPeople: 3 }),
   item('Extra tafel', 'cat-extra', { minPeople: 3 }),
   item('Extra stoelen', 'cat-extra', { minPeople: 3 }),
-  item('Hoofdkussens', 'cat-extra', { minPeople: 3 }),
-  item('Onderlaken', 'cat-extra', { minPeople: 3 }),
-  item('Dekens / dons / slaapzak', 'cat-extra', { minPeople: 3 }),
+  item('Hoofdkussens', 'cat-extra', { minPeople: 3 }, { quantity: 1, perPerson: true }),
+  item('Onderlaken', 'cat-extra', { minPeople: 3 }, { quantity: 1, perPerson: true }),
+  item('Dekens / dons / slaapzak', 'cat-extra', { minPeople: 3 }, { quantity: 1, perPerson: true }),
   item('Tent', 'cat-extra', { minPeople: 3 }),
   item('Matras', 'cat-extra', { minPeople: 3 }),
   item('Pomp', 'cat-extra', { minPeople: 3 }),

@@ -22,6 +22,7 @@ import {
 import { Label } from '@/components/ui/label';
 import {
   Plus,
+  Minus,
   Trash2,
   Edit2,
   ChevronDown,
@@ -29,7 +30,9 @@ import {
   Search,
   X,
   FolderPlus,
+  Users,
 } from 'lucide-react';
+import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
 import { cn } from '@/lib/utils';
 import { MasterItem, Temperature, Activity } from '@/lib/types';
 import { temperatureLabels, activityLabels } from '@/lib/constants';
@@ -40,9 +43,11 @@ export default function MasterListPage() {
   const addMasterItem = useAppStore((s) => s.addMasterItem);
   const updateMasterItem = useAppStore((s) => s.updateMasterItem);
   const deleteMasterItem = useAppStore((s) => s.deleteMasterItem);
+  const reorderMasterItems = useAppStore((s) => s.reorderMasterItems);
   const addCategory = useAppStore((s) => s.addCategory);
   const updateCategory = useAppStore((s) => s.updateCategory);
   const deleteCategory = useAppStore((s) => s.deleteCategory);
+  const reorderCategories = useAppStore((s) => s.reorderCategories);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -57,6 +62,8 @@ export default function MasterListPage() {
   const [newItemWeather, setNewItemWeather] = useState<Temperature[]>([]);
   const [newItemActivities, setNewItemActivities] = useState<Activity[]>([]);
   const [newItemMinPeople, setNewItemMinPeople] = useState<number>(0);
+  const [newItemQuantity, setNewItemQuantity] = useState(1);
+  const [newItemPerPerson, setNewItemPerPerson] = useState(false);
 
   // Add category form state
   const [newCatName, setNewCatName] = useState('');
@@ -84,6 +91,14 @@ export default function MasterListPage() {
     groupedItems.set(item.categoryId, existing);
   }
 
+  // Sort items within each category by sortOrder
+  for (const [catId, items] of groupedItems) {
+    groupedItems.set(
+      catId,
+      items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    );
+  }
+
   const sortedCategories = categories
     .filter((c) => groupedItems.has(c.id))
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -96,6 +111,8 @@ export default function MasterListPage() {
     setNewItemWeather([]);
     setNewItemActivities([]);
     setNewItemMinPeople(0);
+    setNewItemQuantity(1);
+    setNewItemPerPerson(false);
   };
 
   const handleAddItem = () => {
@@ -108,6 +125,8 @@ export default function MasterListPage() {
         ...(newItemActivities.length > 0 ? { activities: newItemActivities } : {}),
         ...(newItemMinPeople > 0 ? { minPeople: newItemMinPeople } : {}),
       },
+      quantity: newItemQuantity > 1 ? newItemQuantity : undefined,
+      perPerson: newItemPerPerson || undefined,
     });
     resetItemForm();
     setShowAddItem(false);
@@ -119,6 +138,8 @@ export default function MasterListPage() {
       name: editingItem.name,
       categoryId: editingItem.categoryId,
       conditions: editingItem.conditions,
+      quantity: editingItem.quantity,
+      perPerson: editingItem.perPerson,
     });
     setEditingItem(null);
   };
@@ -131,12 +152,24 @@ export default function MasterListPage() {
     setShowAddCategory(false);
   };
 
+  // Handle category reordering
+  const categoryIds = sortedCategories.map((c) => c.id);
+  const handleReorderCategories = (orderedIds: string[]) => {
+    const reordered = orderedIds.map((id, index) => {
+      const cat = categories.find((c) => c.id === id)!;
+      return { ...cat, sortOrder: index };
+    });
+    // Include categories that weren't in the sortable list (empty ones)
+    const otherCats = categories.filter((c) => !orderedIds.includes(c.id));
+    reorderCategories([...reordered, ...otherCats]);
+  };
+
   return (
     <div className="mx-auto max-w-lg px-4 pt-6">
       <div className="mb-4">
         <h1 className="text-2xl font-bold">Standaardlijst</h1>
         <p className="text-sm text-muted-foreground">
-          Beheer je standaard paklijst. Items worden gebruikt bij het aanmaken van nieuwe trips.
+          Beheer je standaard paklijst. Sleep items om te herordenen.
         </p>
       </div>
 
@@ -148,7 +181,7 @@ export default function MasterListPage() {
               Item
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Item toevoegen</DialogTitle>
             </DialogHeader>
@@ -175,6 +208,48 @@ export default function MasterListPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Standaard aantal</Label>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setNewItemQuantity(Math.max(1, newItemQuantity - 1))}
+                  >
+                    <Minus className="h-3 w-3" />
+                  </Button>
+                  <span className="w-8 text-center font-medium">{newItemQuantity}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setNewItemQuantity(Math.min(99, newItemQuantity + 1))}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setNewItemPerPerson(!newItemPerPerson)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm w-full transition-colors',
+                    newItemPerPerson
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground'
+                  )}
+                >
+                  <Users className="h-4 w-4" />
+                  <span className="font-medium">Per persoon</span>
+                  <span className="text-xs ml-auto">
+                    {newItemPerPerson ? 'Ja — vermenigvuldigt met aantal personen' : 'Nee — vast aantal'}
+                  </span>
+                </button>
               </div>
               <div className="space-y-2">
                 <Label>Weer (optioneel)</Label>
@@ -297,82 +372,103 @@ export default function MasterListPage() {
       </div>
 
       <div className="space-y-2 pb-4">
-        {sortedCategories.map((category) => {
-          const items = groupedItems.get(category.id) || [];
-          const isCollapsed = collapsedCategories.has(category.id);
+        <SortableList items={categoryIds} onReorder={handleReorderCategories}>
+          {sortedCategories.map((category) => {
+            const items = groupedItems.get(category.id) || [];
+            const isCollapsed = collapsedCategories.has(category.id);
+            const itemIds = items.map((i) => i.id);
 
-          return (
-            <div key={category.id} className="rounded-lg border">
-              <div className="flex items-center">
-                <button
-                  onClick={() => toggleCategory(category.id)}
-                  className="flex flex-1 items-center gap-2 p-3 text-left"
-                >
-                  {isCollapsed ? (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                  )}
-                  <span className="text-base">{category.icon}</span>
-                  <span className="flex-1 font-medium text-sm">{category.name}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {items.length}
-                  </Badge>
-                </button>
-                <button
-                  onClick={() =>
-                    setEditingCategory({ id: category.id, name: category.name, icon: category.icon })
-                  }
-                  className="p-2 text-muted-foreground hover:text-foreground"
-                >
-                  <Edit2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {!isCollapsed && (
-                <div className="border-t">
-                  {items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-2 px-3 py-2.5 border-b last:border-b-0"
+            return (
+              <SortableItem key={category.id} id={category.id}>
+                <div className="rounded-lg border mb-2">
+                  <div className="flex items-center">
+                    <DragHandle className="shrink-0 pl-2" />
+                    <button
+                      onClick={() => toggleCategory(category.id)}
+                      className="flex flex-1 items-center gap-2 p-3 text-left"
                     >
-                      <span className="flex-1 text-sm">{item.name}</span>
-                      <div className="flex items-center gap-1">
-                        {item.conditions.weather && item.conditions.weather.length > 0 && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {item.conditions.weather.join(', ')}
-                          </Badge>
-                        )}
-                        {item.conditions.activities && item.conditions.activities.length > 0 && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {item.conditions.activities.map((a) => activityLabels[a]).join(', ')}
-                          </Badge>
-                        )}
-                        {item.conditions.minPeople && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {item.conditions.minPeople}+ pers.
-                          </Badge>
-                        )}
-                        <button
-                          onClick={() => setEditingItem({ ...item })}
-                          className="p-1 text-muted-foreground hover:text-foreground"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => deleteMasterItem(item.id)}
-                          className="p-1 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      {isCollapsed ? (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                      )}
+                      <span className="text-base">{category.icon}</span>
+                      <span className="flex-1 font-medium text-sm">{category.name}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {items.length}
+                      </Badge>
+                    </button>
+                    <button
+                      onClick={() =>
+                        setEditingCategory({ id: category.id, name: category.name, icon: category.icon })
+                      }
+                      className="p-2 text-muted-foreground hover:text-foreground"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {!isCollapsed && (
+                    <div className="border-t">
+                      <SortableList
+                        items={itemIds}
+                        onReorder={(orderedIds) =>
+                          reorderMasterItems(category.id, orderedIds)
+                        }
+                      >
+                        {items.map((item) => {
+                          const qty = item.quantity ?? 1;
+                          return (
+                            <SortableItem key={item.id} id={item.id}>
+                              <div className="flex items-center gap-1 px-2 py-2.5 border-b last:border-b-0">
+                                <DragHandle className="shrink-0 p-1" />
+                                <span className="flex-1 text-sm min-w-0 truncate">{item.name}</span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {(qty > 1 || item.perPerson) && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5">
+                                      {item.perPerson ? `${qty} p.p.` : `×${qty}`}
+                                    </Badge>
+                                  )}
+                                  {item.conditions.weather && item.conditions.weather.length > 0 && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {item.conditions.weather.join(', ')}
+                                    </Badge>
+                                  )}
+                                  {item.conditions.activities && item.conditions.activities.length > 0 && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {item.conditions.activities.map((a) => activityLabels[a]).join(', ')}
+                                    </Badge>
+                                  )}
+                                  {item.conditions.minPeople && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {item.conditions.minPeople}+ pers.
+                                    </Badge>
+                                  )}
+                                  <button
+                                    onClick={() => setEditingItem({ ...item })}
+                                    className="p-1 text-muted-foreground hover:text-foreground"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteMasterItem(item.id)}
+                                    className="p-1 text-muted-foreground hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </SortableItem>
+                          );
+                        })}
+                      </SortableList>
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              </SortableItem>
+            );
+          })}
+        </SortableList>
 
         {emptyCategories.length > 0 && !searchQuery && (
           <div className="mt-4">
@@ -403,7 +499,7 @@ export default function MasterListPage() {
 
       {/* Edit item dialog */}
       <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Item bewerken</DialogTitle>
           </DialogHeader>
@@ -434,6 +530,46 @@ export default function MasterListPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Standaard aantal</Label>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setEditingItem({ ...editingItem, quantity: Math.max(1, (editingItem.quantity ?? 1) - 1) })}
+                  >
+                    <Minus className="h-3 w-3" />
+                  </Button>
+                  <span className="w-8 text-center font-medium">{editingItem.quantity ?? 1}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setEditingItem({ ...editingItem, quantity: Math.min(99, (editingItem.quantity ?? 1) + 1) })}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingItem({ ...editingItem, perPerson: !editingItem.perPerson })}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm w-full transition-colors',
+                  editingItem.perPerson
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground'
+                )}
+              >
+                <Users className="h-4 w-4" />
+                <span className="font-medium">Per persoon</span>
+                <span className="text-xs ml-auto">
+                  {editingItem.perPerson ? 'Ja — vermenigvuldigt' : 'Nee — vast aantal'}
+                </span>
+              </button>
               <div className="space-y-2">
                 <Label>Weer</Label>
                 <div className="flex flex-wrap gap-2">
