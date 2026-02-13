@@ -4,6 +4,7 @@ import './globals.css';
 import { AppShell } from '@/components/app-shell';
 import { StoreInitializer } from '@/components/store-initializer';
 import { ServiceWorkerRegister } from '@/components/sw-register';
+import { ThemeProvider } from '@/components/theme-provider';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -42,15 +43,17 @@ export default function RootLayout({
   return (
     <html lang="nl">
       <head>
-        <link rel="apple-touch-icon" href="/icon-192.svg" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ServiceWorkerRegister />
-        <StoreInitializer>
-          <AppShell>{children}</AppShell>
-        </StoreInitializer>
+        <ThemeProvider>
+          <StoreInitializer>
+            <AppShell>{children}</AppShell>
+          </StoreInitializer>
+        </ThemeProvider>
       </body>
     </html>
   );

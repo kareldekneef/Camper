@@ -11,13 +11,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Download, Upload, Trash2, RotateCcw } from 'lucide-react';
+import { Download, Upload, Trash2, RotateCcw, Sun, Moon, Monitor } from 'lucide-react';
 import { defaultCategories, defaultMasterItems } from '@/lib/seed-data';
+import { useTheme } from '@/components/theme-provider';
+import { cn } from '@/lib/utils';
 
 export default function SettingsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<string>('');
+  const { theme, setTheme } = useTheme();
 
   const handleExport = () => {
     const raw = localStorage.getItem('camperpack-storage');
@@ -55,8 +58,6 @@ export default function SettingsPage() {
   };
 
   const handleResetMasterList = () => {
-    const store = useAppStore.getState();
-    // Reset categories and master items to defaults
     useAppStore.setState({
       categories: defaultCategories,
       masterItems: defaultMasterItems,
@@ -69,6 +70,12 @@ export default function SettingsPage() {
     window.location.reload();
   };
 
+  const themeOptions = [
+    { value: 'light' as const, label: 'Licht', icon: Sun },
+    { value: 'dark' as const, label: 'Donker', icon: Moon },
+    { value: 'system' as const, label: 'Systeem', icon: Monitor },
+  ];
+
   return (
     <div className="mx-auto max-w-lg px-4 pt-6">
       <div className="mb-6">
@@ -76,6 +83,33 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-4">
+        {/* Theme */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Thema</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-2">
+              {themeOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setTheme(opt.value)}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-lg border p-3 text-sm transition-colors',
+                    theme === opt.value
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border hover:border-primary/50'
+                  )}
+                >
+                  <opt.icon className="h-5 w-5" />
+                  <span className="text-xs font-medium">{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Data */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Gegevens</CardTitle>
@@ -95,6 +129,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {/* Master list */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Standaardlijst</CardTitle>
@@ -127,6 +162,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {/* Danger */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-destructive">Gevaarlijke zone</CardTitle>
@@ -160,7 +196,7 @@ export default function SettingsPage() {
         </Card>
 
         <div className="text-center text-xs text-muted-foreground py-4">
-          CamperPack v1.0 — Gebouwd met ❤️ voor camperreizen
+          CamperPack v3.0 — Gebouwd met ❤️ voor camperreizen
         </div>
       </div>
     </div>

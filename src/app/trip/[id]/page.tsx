@@ -1,7 +1,6 @@
 'use client';
 
 import { use, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,7 +21,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ArrowLeft,
   Plus,
@@ -41,7 +39,9 @@ import {
   ShoppingCart,
   AlertTriangle,
   Check,
+  Share2,
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
@@ -61,7 +61,6 @@ export default function TripDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const router = useRouter();
   const trips = useAppStore((s) => s.trips);
   const allTripItems = useAppStore((s) => s.tripItems);
   const categories = useAppStore((s) => s.categories);
@@ -83,6 +82,7 @@ export default function TripDetailPage({
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
+  const [shareStatus, setShareStatus] = useState<string>('');
 
   if (!trip) {
     return (
@@ -149,6 +149,57 @@ export default function TripDetailPage({
     setShowAddItem(false);
   };
 
+  const handleShareTrip = async () => {
+    const sortedCats = categories
+      .filter((c) => tripItems.some((ti) => ti.categoryId === c.id))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    let text = `📋 ${trip.name}`;
+    if (trip.destination) text += ` — ${trip.destination}`;
+    text += '\n';
+    if (trip.startDate && trip.endDate) {
+      text += `📅 ${trip.startDate} t/m ${trip.endDate}\n`;
+    }
+    text += `${temperatureIcons[trip.temperature]} ${temperatureLabels[trip.temperature]} • ${durationLabels[trip.duration]} • ${trip.peopleCount} pers.\n`;
+    text += `✅ ${totalChecked}/${totalItems} ingepakt (${Math.round(progress)}%)\n\n`;
+
+    for (const cat of sortedCats) {
+      const items = tripItems.filter((ti) => ti.categoryId === cat.id);
+      text += `${cat.icon} ${cat.name}\n`;
+      for (const item of items) {
+        text += `  ${item.checked ? '✅' : '⬜'} ${item.name}`;
+        if (item.notes) text += ` (${item.notes})`;
+        text += '\n';
+      }
+      text += '\n';
+    }
+
+    if (trip.notes) {
+      text += `📝 Notities: ${trip.notes}\n`;
+    }
+
+    text += '— CamperPack';
+
+    // Try native share first (mobile), fallback to clipboard
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: trip.name, text });
+        return;
+      } catch {
+        // User cancelled or share failed, try clipboard
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setShareStatus('Gekopieerd naar klembord! 📋');
+      setTimeout(() => setShareStatus(''), 2500);
+    } catch {
+      setShareStatus('Kon niet kopiëren');
+      setTimeout(() => setShareStatus(''), 2500);
+    }
+  };
+
   const statusActions = [
     { value: 'planning', label: 'Planning' },
     { value: 'active', label: 'Actief' },
@@ -204,6 +255,13 @@ export default function TripDetailPage({
         </div>
         <Progress value={progress} className="h-3" />
       </div>
+
+      {/* Trip notes */}
+      {trip.notes && (
+        <div className="mb-4 rounded-lg border bg-muted/50 p-3">
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">📝 {trip.notes}</p>
+        </div>
+      )}
 
       {/* Forgotten warning when trip is completed */}
       {trip.status === 'completed' && totalForgotten > 0 && filterMode !== 'forgotten' && (
@@ -373,6 +431,14 @@ export default function TripDetailPage({
             </div>
           </DialogContent>
         </Dialog>
+
+        <Button variant="outline" className="w-full gap-2" onClick={handleShareTrip}>
+          <Share2 className="h-4 w-4" />
+          Lijst delen
+        </Button>
+        {shareStatus && (
+          <p className="text-sm text-center text-muted-foreground">{shareStatus}</p>
+        )}
 
         <Dialog open={showUncheckConfirm} onOpenChange={setShowUncheckConfirm}>
           <DialogTrigger asChild>
@@ -737,11 +803,12 @@ function EditTripDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Trip notities</Label>
-            <Input
+            <Label>Trip notities (lessen geleerd)</Label>
+            <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="bv. Lessen geleerd, opmerkingen..."
+              placeholder="bv. Volgende keer extra handdoeken meenemen, campingplek 23 was de beste..."
+              rows={4}
             />
           </div>
 
