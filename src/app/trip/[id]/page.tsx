@@ -41,6 +41,10 @@ import {
   AlertTriangle,
   Check,
   Share2,
+  ArrowUpDown,
+  ArrowDownAZ,
+  ListOrdered,
+  PackageCheck,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
@@ -56,6 +60,7 @@ import {
 import { TripItem, Activity, Duration, Temperature } from '@/lib/types';
 
 type FilterMode = 'all' | 'unchecked' | 'shopping' | 'forgotten';
+type SortMode = 'default' | 'alpha' | 'packed';
 
 export default function TripDetailPage({
   params,
@@ -84,6 +89,7 @@ export default function TripDetailPage({
   const [newItemCategory, setNewItemCategory] = useState('');
   const [newItemQuantity, setNewItemQuantity] = useState(1);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('default');
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
   const [shareStatus, setShareStatus] = useState<string>('');
@@ -137,17 +143,42 @@ export default function TripDetailPage({
     groupedItems.set(item.categoryId, existing);
   }
 
-  // Sort items within each category by sortOrder
+  // Sort items within each category based on sort mode
   for (const [catId, items] of groupedItems) {
     groupedItems.set(
       catId,
-      items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      items.sort((a, b) => {
+        if (sortMode === 'alpha') {
+          return a.name.localeCompare(b.name, 'nl');
+        }
+        if (sortMode === 'packed') {
+          // Unchecked first, then checked; within each group, keep sortOrder
+          if (a.checked !== b.checked) return a.checked ? 1 : -1;
+          return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        }
+        // Default: master list order
+        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      })
     );
   }
 
   const sortedCategories = categories
     .filter((c) => groupedItems.has(c.id))
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+    .sort((a, b) => {
+      if (sortMode === 'alpha') {
+        return a.name.localeCompare(b.name, 'nl');
+      }
+      if (sortMode === 'packed') {
+        // Categories with most unpacked items first
+        const aItems = groupedItems.get(a.id) || [];
+        const bItems = groupedItems.get(b.id) || [];
+        const aUnchecked = aItems.filter((i) => !i.checked).length;
+        const bUnchecked = bItems.filter((i) => !i.checked).length;
+        if (aUnchecked !== bUnchecked) return bUnchecked - aUnchecked;
+        return a.sortOrder - b.sortOrder;
+      }
+      return a.sortOrder - b.sortOrder;
+    });
 
   const totalChecked = tripItems.filter((ti) => ti.checked).length;
   const totalItems = tripItems.length;
@@ -323,6 +354,30 @@ export default function TripDetailPage({
         )}
       </div>
 
+      {/* Sort mode */}
+      <div className="mb-4 flex items-center gap-1.5">
+        <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="text-xs text-muted-foreground mr-1">Volgorde:</span>
+        <SortButton
+          active={sortMode === 'default'}
+          onClick={() => setSortMode('default')}
+          icon={<ListOrdered className="h-3 w-3" />}
+          label="Standaard"
+        />
+        <SortButton
+          active={sortMode === 'alpha'}
+          onClick={() => setSortMode('alpha')}
+          icon={<ArrowDownAZ className="h-3 w-3" />}
+          label="A → Z"
+        />
+        <SortButton
+          active={sortMode === 'packed'}
+          onClick={() => setSortMode('packed')}
+          icon={<PackageCheck className="h-3 w-3" />}
+          label="In te pakken"
+        />
+      </div>
+
       {/* Search */}
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -370,31 +425,52 @@ export default function TripDetailPage({
 
               {!isCollapsed && (
                 <div className="border-t">
-                  <SortableList
-                    items={itemIds}
-                    onReorder={(orderedIds) =>
-                      reorderTripItems(id, category.id, orderedIds)
-                    }
-                  >
-                    {items.map((item) => (
-                      <SortableItem key={item.id} id={item.id}>
-                        <ItemRow
-                          item={item}
-                          onToggle={() => toggleTripItem(item.id)}
-                          onDelete={() => deleteTripItem(item.id)}
-                          onUpdateNotes={(notes) =>
-                            updateTripItem(item.id, { notes })
-                          }
-                          onUpdateQuantity={(quantity) =>
-                            updateTripItem(item.id, { quantity })
-                          }
-                          onSaveToMaster={
-                            item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
-                          }
-                        />
-                      </SortableItem>
-                    ))}
-                  </SortableList>
+                  {sortMode === 'default' ? (
+                    <SortableList
+                      items={itemIds}
+                      onReorder={(orderedIds) =>
+                        reorderTripItems(id, category.id, orderedIds)
+                      }
+                    >
+                      {items.map((item) => (
+                        <SortableItem key={item.id} id={item.id}>
+                          <ItemRow
+                            item={item}
+                            onToggle={() => toggleTripItem(item.id)}
+                            onDelete={() => deleteTripItem(item.id)}
+                            onUpdateNotes={(notes) =>
+                              updateTripItem(item.id, { notes })
+                            }
+                            onUpdateQuantity={(quantity) =>
+                              updateTripItem(item.id, { quantity })
+                            }
+                            onSaveToMaster={
+                              item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
+                            }
+                          />
+                        </SortableItem>
+                      ))}
+                    </SortableList>
+                  ) : (
+                    items.map((item) => (
+                      <ItemRow
+                        key={item.id}
+                        item={item}
+                        hideDragHandle
+                        onToggle={() => toggleTripItem(item.id)}
+                        onDelete={() => deleteTripItem(item.id)}
+                        onUpdateNotes={(notes) =>
+                          updateTripItem(item.id, { notes })
+                        }
+                        onUpdateQuantity={(quantity) =>
+                          updateTripItem(item.id, { quantity })
+                        }
+                        onSaveToMaster={
+                          item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
+                        }
+                      />
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -562,9 +638,38 @@ function FilterButton({
   );
 }
 
+// Sort button component
+function SortButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors',
+        active
+          ? 'border-primary bg-primary/10 text-primary'
+          : 'border-border text-muted-foreground hover:border-primary/50'
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 // Item row with swipe-to-check, notes, quantity, and drag handle support
 function ItemRow({
   item,
+  hideDragHandle,
   onToggle,
   onDelete,
   onUpdateNotes,
@@ -572,6 +677,7 @@ function ItemRow({
   onSaveToMaster,
 }: {
   item: TripItem;
+  hideDragHandle?: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onUpdateNotes: (notes: string) => void;
@@ -658,7 +764,7 @@ function ItemRow({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <DragHandle className="shrink-0 p-1" />
+        {!hideDragHandle && <DragHandle className="shrink-0 p-1" />}
         <button
           onClick={swiping ? undefined : onToggle}
           className="flex-1 flex items-center gap-3 min-h-[44px] text-left"
