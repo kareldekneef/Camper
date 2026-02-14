@@ -80,6 +80,7 @@ interface AppState {
   saveTripItemToMaster: (itemId: string) => void;
   uncheckAllTripItems: (tripId: string) => void;
   reorderTripItems: (tripId: string, categoryId: string, orderedIds: string[]) => void;
+  copyItemToShopping: (itemId: string) => void;
 }
 
 function shouldIncludeItem(
@@ -444,6 +445,54 @@ export const useAppStore = create<AppState>()(
             const index = orderedIds.indexOf(ti.id);
             return index >= 0 ? { ...ti, sortOrder: index } : ti;
           }),
+        });
+      },
+
+      copyItemToShopping: (itemId) => {
+        const state = get();
+        const item = state.tripItems.find((ti) => ti.id === itemId);
+        if (!item) return;
+
+        // Find the shopping category
+        const shoppingCat = state.categories.find(
+          (c) => c.name.toLowerCase().includes('shopping')
+        );
+        if (!shoppingCat) return;
+
+        // Don't copy if item is already in the shopping category
+        if (item.categoryId === shoppingCat.id) return;
+
+        // Don't copy if an item with the same name already exists in shopping for this trip
+        const alreadyExists = state.tripItems.some(
+          (ti) =>
+            ti.tripId === item.tripId &&
+            ti.categoryId === shoppingCat.id &&
+            ti.name.toLowerCase() === item.name.toLowerCase()
+        );
+        if (alreadyExists) return;
+
+        const shopItems = state.tripItems.filter(
+          (ti) => ti.tripId === item.tripId && ti.categoryId === shoppingCat.id
+        );
+        const maxOrder = Math.max(
+          ...shopItems.map((ti) => ti.sortOrder ?? 0),
+          -1
+        );
+
+        set({
+          tripItems: [
+            ...state.tripItems,
+            {
+              id: uuid(),
+              tripId: item.tripId,
+              name: item.name,
+              categoryId: shoppingCat.id,
+              checked: false,
+              isCustom: true,
+              quantity: item.quantity ?? 1,
+              sortOrder: maxOrder + 1,
+            },
+          ],
         });
       },
 

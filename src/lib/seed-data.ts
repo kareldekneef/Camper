@@ -2,7 +2,7 @@ import { Category, MasterItem } from './types';
 import { v4 as uuid } from 'uuid';
 
 export const defaultCategories: Category[] = [
-  { id: 'cat-shopping', name: 'Shopping / Voorbereiding', icon: '🛒', sortOrder: 0 },
+  { id: 'cat-shopping', name: 'Shopping', icon: '🛒', sortOrder: 0 },
   { id: 'cat-camper', name: 'Camper & Uitrusting', icon: '🚐', sortOrder: 1 },
   { id: 'cat-clothing', name: 'Kleding & Persoonlijk', icon: '👕', sortOrder: 2 },
   { id: 'cat-food-breakfast', name: 'Ontbijt', icon: '🥐', sortOrder: 3 },
@@ -41,7 +41,7 @@ function item(
 }
 
 export const defaultMasterItems: MasterItem[] = [
-  // Shopping / Voorbereiding
+  // Shopping
   item('Batterijen voor alarm', 'cat-shopping'),
   item('Painkillers', 'cat-shopping'),
   item('Gaviscon', 'cat-shopping'),

@@ -81,6 +81,7 @@ export default function TripDetailPage({
   const updateTripItem = useAppStore((s) => s.updateTripItem);
   const uncheckAllTripItems = useAppStore((s) => s.uncheckAllTripItems);
   const reorderTripItems = useAppStore((s) => s.reorderTripItems);
+  const copyItemToShopping = useAppStore((s) => s.copyItemToShopping);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -116,7 +117,7 @@ export default function TripDetailPage({
 
   // Shopping category ID
   const shoppingCategoryId = categories.find(
-    (c) => c.name.toLowerCase().includes('shopping') || c.name.toLowerCase().includes('voorbereiding')
+    (c) => c.name.toLowerCase().includes('shopping')
   )?.id;
 
   // Apply filter mode
@@ -447,6 +448,11 @@ export default function TripDetailPage({
                             onSaveToMaster={
                               item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
                             }
+                            onCopyToShopping={
+                              shoppingCategoryId && item.categoryId !== shoppingCategoryId
+                                ? () => copyItemToShopping(item.id)
+                                : undefined
+                            }
                           />
                         </SortableItem>
                       ))}
@@ -467,6 +473,11 @@ export default function TripDetailPage({
                         }
                         onSaveToMaster={
                           item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
+                        }
+                        onCopyToShopping={
+                          shoppingCategoryId && item.categoryId !== shoppingCategoryId
+                            ? () => copyItemToShopping(item.id)
+                            : undefined
                         }
                       />
                     ))
@@ -675,6 +686,7 @@ function ItemRow({
   onUpdateNotes,
   onUpdateQuantity,
   onSaveToMaster,
+  onCopyToShopping,
 }: {
   item: TripItem;
   hideDragHandle?: boolean;
@@ -683,6 +695,7 @@ function ItemRow({
   onUpdateNotes: (notes: string) => void;
   onUpdateQuantity: (quantity: number) => void;
   onSaveToMaster?: () => void;
+  onCopyToShopping?: () => void;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -846,6 +859,18 @@ function ItemRow({
                   <MessageSquare className="h-4 w-4" />
                   {item.notes ? 'Notitie bewerken' : 'Notitie toevoegen'}
                 </button>
+                {onCopyToShopping && (
+                  <button
+                    onClick={() => {
+                      onCopyToShopping();
+                      setShowActions(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+                  >
+                    <ShoppingCart className="h-4 w-4" />
+                    Naar shopping
+                  </button>
+                )}
                 {onSaveToMaster && (
                   <button
                     onClick={() => {

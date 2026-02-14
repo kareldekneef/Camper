@@ -20,8 +20,7 @@ import { TripItem } from '@/lib/types';
 
 // Shopping category detection
 function isShoppingCategory(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.includes('shopping') || lower.includes('voorbereiding');
+  return name.toLowerCase().includes('shopping');
 }
 
 type ShoppingFilter = 'todo' | 'purchased' | 'all';
