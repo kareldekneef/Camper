@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   User,
 } from 'firebase/auth';
@@ -25,14 +27,13 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
-function detectIOSPWA(): boolean {
+function detectStandalone(): boolean {
   if (typeof window === 'undefined') return false;
-  const isStandalone =
+  return (
     window.matchMedia('(display-mode: standalone)').matches ||
     ('standalone' in window.navigator &&
-      (window.navigator as unknown as { standalone: boolean }).standalone === true);
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  return isStandalone && isIOS;
+      (window.navigator as unknown as { standalone: boolean }).standalone === true)
+  );
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -41,7 +42,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isIOSPWA, setIsIOSPWA] = useState(false);
 
   useEffect(() => {
-    setIsIOSPWA(detectIOSPWA());
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    setIsIOSPWA(detectStandalone() && isIOS);
+  }, []);
+
+  // Handle redirect result when returning from Google sign-in
+  useEffect(() => {
+    if (detectStandalone()) {
+      getRedirectResult(auth).catch((error) => {
+        console.error('Redirect sign-in error:', error);
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -53,12 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
-    // iOS PWA: popups don't work, open in Safari instead
-    if (detectIOSPWA()) {
-      window.open(window.location.href, '_blank');
+    // PWA standalone mode (iOS & Android): use redirect flow
+    // Popups are blocked in standalone/PWA WebView context
+    if (detectStandalone()) {
+      await signInWithRedirect(auth, googleProvider);
       return;
     }
 
+    // Normal browser: use popup
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error: unknown) {
