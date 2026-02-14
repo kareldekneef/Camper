@@ -28,6 +28,7 @@ export function GroupCard() {
   const { user } = useAuth();
   const currentGroup = useAppStore((s) => s.currentGroup);
   const setCurrentGroup = useAppStore((s) => s.setCurrentGroup);
+  const newMemberUids = useAppStore((s) => s.newMemberUids);
 
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
@@ -249,36 +250,47 @@ export function GroupCard() {
             Leden ({members.length})
           </p>
           <div className="space-y-1.5">
-            {members.map((member) => (
-              <div key={member.uid} className="flex items-center gap-2">
-                {member.photoURL ? (
-                  <img
-                    src={member.photoURL}
-                    alt=""
-                    className="h-6 w-6 rounded-full"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs">
-                    {member.displayName.charAt(0)}
-                  </div>
-                )}
-                <span className="text-sm flex-1 truncate">{member.displayName}</span>
-                {member.role === 'owner' && (
-                  <Badge variant="outline" className="text-xs">Eigenaar</Badge>
-                )}
-                {isOwner && member.uid !== user.uid && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => handleRemoveMember(member.uid)}
-                  >
-                    <UserMinus className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
-            ))}
+            {members.map((member) => {
+              const isNew = newMemberUids.includes(member.uid);
+              return (
+                <div
+                  key={member.uid}
+                  className={`flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors duration-500 ${isNew ? 'bg-blue-50 ring-1 ring-blue-200' : ''}`}
+                >
+                  {member.photoURL ? (
+                    <img
+                      src={member.photoURL}
+                      alt=""
+                      className="h-6 w-6 rounded-full"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs">
+                      {member.displayName.charAt(0)}
+                    </div>
+                  )}
+                  <span className="text-sm flex-1 truncate">{member.displayName}</span>
+                  {isNew && (
+                    <Badge className="text-[10px] bg-blue-500 text-white animate-pulse px-1.5 py-0">
+                      Nieuw
+                    </Badge>
+                  )}
+                  {member.role === 'owner' && (
+                    <Badge variant="outline" className="text-xs">Eigenaar</Badge>
+                  )}
+                  {isOwner && member.uid !== user.uid && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => handleRemoveMember(member.uid)}
+                    >
+                      <UserMinus className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { User } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
 import { useAppStore } from './store';
+import { Group } from './types';
 import {
   uploadAllToFirestore,
   downloadFromFirestore,
@@ -21,6 +24,7 @@ export function useFirestoreSync(user: User | null) {
   const isSyncingRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevHashRef = useRef('');
+  const currentGroupId = useAppStore((s) => s.currentGroup?.id ?? null);
 
   // Stable sync function for writing changes to Firestore
   const syncToFirestore = useCallback(
@@ -236,6 +240,51 @@ export function useFirestoreSync(user: User | null) {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [user, refreshGroupData]);
+
+  // Real-time listener on group document — detect new members instantly
+  useEffect(() => {
+    if (!user || !currentGroupId) return;
+
+    const groupRef = doc(db, 'groups', currentGroupId);
+
+    const unsubscribe = onSnapshot(
+      groupRef,
+      (snapshot) => {
+        if (!snapshot.exists()) return;
+
+        const freshGroup = { id: snapshot.id, ...snapshot.data() } as Group;
+        const currentGroup = useAppStore.getState().currentGroup;
+        if (!currentGroup) return;
+
+        // Compare old and new member UIDs to find who just joined
+        const oldUids = new Set(Object.keys(currentGroup.members));
+        const newUids = Object.keys(freshGroup.members);
+        const justJoined = newUids.filter((uid) => !oldUids.has(uid));
+
+        // Update the group in the store
+        isSyncingRef.current = true;
+        useAppStore.setState({ currentGroup: freshGroup });
+
+        // Flag new members (only if there are actually new ones)
+        if (justJoined.length > 0) {
+          useAppStore.setState({ newMemberUids: justJoined });
+
+          // Auto-clear the "Nieuw" badge after 10 seconds
+          setTimeout(() => {
+            useAppStore.setState({ newMemberUids: [] });
+          }, 10000);
+        }
+
+        prevHashRef.current = hashState(useAppStore.getState());
+        isSyncingRef.current = false;
+      },
+      (error) => {
+        console.error('Group snapshot listener error:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, currentGroupId]);
 }
 
 function hashState(state: {

@@ -28,6 +28,7 @@ interface AppState {
   sharedTrips: Trip[];
   sharedTripItems: TripItem[];
   personalBackupItems: MasterItem[];
+  newMemberUids: string[]; // UIDs of recently joined members (for "Nieuw" badge)
 
   // Init
   initialize: () => void;
@@ -67,6 +68,8 @@ interface AppState {
   setPersonalBackupItems: (items: MasterItem[]) => void;
   addPersonalItemToGroup: (itemId: string) => void;
   markSharedTripsSeen: () => void;
+  setNewMemberUids: (uids: string[]) => void;
+  clearNewMemberUids: () => void;
 
   // Trip items
   toggleTripItem: (itemId: string) => void;
@@ -131,6 +134,7 @@ export const useAppStore = create<AppState>()(
       sharedTrips: [],
       sharedTripItems: [],
       personalBackupItems: [],
+      newMemberUids: [],
 
       initialize: () => {
         const state = get();
@@ -357,6 +361,14 @@ export const useAppStore = create<AppState>()(
         set({
           seenSharedTripIds: state.sharedTrips.map((t) => t.id),
         });
+      },
+
+      setNewMemberUids: (uids) => {
+        set({ newMemberUids: uids });
+      },
+
+      clearNewMemberUids: () => {
+        set({ newMemberUids: [] });
       },
 
       // Trip items
