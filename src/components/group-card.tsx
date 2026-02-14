@@ -38,6 +38,7 @@ export function GroupCard() {
   const [loading, setLoading] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [removingMemberUid, setRemovingMemberUid] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   if (!user) return null;
@@ -114,15 +115,19 @@ export function GroupCard() {
     }
   };
 
-  const handleRemoveMember = async (memberUid: string) => {
-    if (!currentGroup) return;
+  const handleRemoveMember = async () => {
+    if (!currentGroup || !removingMemberUid) return;
+    setLoading(true);
     try {
-      await removeMember(user.uid, currentGroup.id, memberUid);
+      await removeMember(user.uid, currentGroup.id, removingMemberUid);
       const updatedMembers = { ...currentGroup.members };
-      delete updatedMembers[memberUid];
+      delete updatedMembers[removingMemberUid];
       setCurrentGroup({ ...currentGroup, members: updatedMembers });
+      setRemovingMemberUid(null);
     } catch (e: unknown) {
       setError((e as Error).message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -283,7 +288,7 @@ export function GroupCard() {
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6"
-                      onClick={() => handleRemoveMember(member.uid)}
+                      onClick={() => setRemovingMemberUid(member.uid)}
                     >
                       <UserMinus className="h-3 w-3" />
                     </Button>
@@ -293,6 +298,26 @@ export function GroupCard() {
             })}
           </div>
         </div>
+
+        {/* Remove member confirmation */}
+        <Dialog open={!!removingMemberUid} onOpenChange={(open) => !open && setRemovingMemberUid(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Lid verwijderen?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Weet je zeker dat je{' '}
+              <strong>{removingMemberUid && currentGroup.members[removingMemberUid]?.displayName}</strong>{' '}
+              uit de groep wilt verwijderen?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setRemovingMemberUid(null)}>Annuleren</Button>
+              <Button variant="destructive" onClick={handleRemoveMember} disabled={loading}>
+                {loading ? 'Bezig...' : 'Verwijderen'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Invite code */}
         <div className="space-y-2">
