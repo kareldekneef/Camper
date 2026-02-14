@@ -27,7 +27,7 @@ export default function SettingsPage() {
   const [authError, setAuthError] = useState<string>('');
   const [signingIn, setSigningIn] = useState(false);
   const { theme, setTheme } = useTheme();
-  const { user, signInWithGoogle, signOut } = useAuth();
+  const { user, isIOSPWA, signInWithGoogle, signOut } = useAuth();
 
   const handleSignIn = async () => {
     setAuthError('');
@@ -175,13 +175,18 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">
                   Log in om je gegevens te synchroniseren tussen apparaten.
                 </p>
+                {isIOSPWA && (
+                  <p className="text-xs text-muted-foreground bg-muted rounded-lg p-2">
+                    Op iOS open je deze pagina in Safari om in te loggen. Tik op de knop hieronder.
+                  </p>
+                )}
                 <Button
                   className="w-full gap-2"
                   onClick={handleSignIn}
                   disabled={signingIn}
                 >
                   <GoogleIcon className="h-4 w-4" />
-                  {signingIn ? 'Bezig met inloggen...' : 'Inloggen met Google'}
+                  {signingIn ? 'Bezig met inloggen...' : isIOSPWA ? 'Open in Safari om in te loggen' : 'Inloggen met Google'}
                 </Button>
                 {authError && (
                   <p className="text-sm text-destructive">{authError}</p>
