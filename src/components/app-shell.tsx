@@ -9,7 +9,7 @@ const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/trip/new', label: 'Nieuw', icon: PlusCircle },
   { href: '/master', label: 'Lijst', icon: List },
-  { href: '/shopping', label: 'Inkopen', icon: ShoppingCart },
+  { href: '/shopping', label: 'Shopping', icon: ShoppingCart },
   { href: '/history', label: 'Historie', icon: Clock },
   { href: '/settings', label: 'Opties', icon: Settings },
 ];
