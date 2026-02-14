@@ -17,7 +17,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 function TripCard({ trip }: { trip: Trip }) {
   const allTripItems = useAppStore((s) => s.tripItems);
@@ -225,9 +225,25 @@ export default function HomePage() {
   const trips = useAppStore((s) => s.trips);
   const currentGroup = useAppStore((s) => s.currentGroup);
   const sharedTrips = useAppStore((s) => s.sharedTrips);
+  const seenSharedTripIds = useAppStore((s) => s.seenSharedTripIds);
+  const markSharedTripsSeen = useAppStore((s) => s.markSharedTripsSeen);
 
   const activeTrips = trips.filter((t) => t.status !== 'completed');
   const completedTrips = trips.filter((t) => t.status === 'completed');
+
+  const newSharedTripsCount = useMemo(() => {
+    if (!currentGroup || sharedTrips.length === 0) return 0;
+    return sharedTrips.filter((t) => !seenSharedTripIds.includes(t.id)).length;
+  }, [currentGroup, sharedTrips, seenSharedTripIds]);
+
+  // Mark as seen after 2 seconds on the page (user has viewed them)
+  useEffect(() => {
+    if (newSharedTripsCount === 0) return;
+    const timer = setTimeout(() => {
+      markSharedTripsSeen();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [newSharedTripsCount, markSharedTripsSeen]);
 
   return (
     <div className="mx-auto max-w-lg px-4 pt-6">
@@ -282,6 +298,11 @@ export default function HomePage() {
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <UsersRound className="h-5 w-5 text-blue-600" />
                 Gedeelde Trips
+                {newSharedTripsCount > 0 && (
+                  <Badge className="bg-red-500 text-white text-xs px-1.5 py-0 min-w-[20px] text-center">
+                    {newSharedTripsCount}
+                  </Badge>
+                )}
               </h2>
               {sharedTrips
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())

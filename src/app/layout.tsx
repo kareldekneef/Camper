@@ -6,6 +6,7 @@ import { StoreInitializer } from '@/components/store-initializer';
 import { ServiceWorkerRegister } from '@/components/sw-register';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/lib/auth-context';
+import { OfflineIndicator } from '@/components/offline-indicator';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -52,6 +53,7 @@ export default function RootLayout({
         <ServiceWorkerRegister />
         <AuthProvider>
           <ThemeProvider>
+            <OfflineIndicator />
             <StoreInitializer>
               <AppShell>{children}</AppShell>
             </StoreInitializer>

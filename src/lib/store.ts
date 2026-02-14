@@ -20,6 +20,9 @@ interface AppState {
   tripItems: TripItem[];
   initialized: boolean;
 
+  // Shared trips notification tracking (persisted)
+  seenSharedTripIds: string[];
+
   // Group state (not persisted to localStorage)
   currentGroup: Group | null;
   sharedTrips: Trip[];
@@ -63,6 +66,7 @@ interface AppState {
   setSharedTrips: (trips: Trip[], tripItems: TripItem[]) => void;
   setPersonalBackupItems: (items: MasterItem[]) => void;
   addPersonalItemToGroup: (itemId: string) => void;
+  markSharedTripsSeen: () => void;
 
   // Trip items
   toggleTripItem: (itemId: string) => void;
@@ -122,6 +126,7 @@ export const useAppStore = create<AppState>()(
       trips: [],
       tripItems: [],
       initialized: false,
+      seenSharedTripIds: [],
       currentGroup: null,
       sharedTrips: [],
       sharedTripItems: [],
@@ -347,6 +352,13 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      markSharedTripsSeen: () => {
+        const state = get();
+        set({
+          seenSharedTripIds: state.sharedTrips.map((t) => t.id),
+        });
+      },
+
       // Trip items
       toggleTripItem: (itemId) => {
         set({
@@ -445,6 +457,7 @@ export const useAppStore = create<AppState>()(
         trips: state.trips,
         tripItems: state.tripItems,
         initialized: state.initialized,
+        seenSharedTripIds: state.seenSharedTripIds,
         // Excluded from localStorage (fetched from Firestore):
         // currentGroup, sharedTrips, sharedTripItems, personalBackupItems
       }),

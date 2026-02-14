@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useRef, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -562,7 +562,7 @@ function FilterButton({
   );
 }
 
-// Item row with notes, quantity, and drag handle support
+// Item row with swipe-to-check, notes, quantity, and drag handle support
 function ItemRow({
   item,
   onToggle,
@@ -581,6 +581,10 @@ function ItemRow({
   const [showActions, setShowActions] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes || '');
+  const [swipeX, setSwipeX] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const swipeThreshold = 70;
 
   const quantity = item.quantity ?? 1;
 
@@ -589,12 +593,74 @@ function ItemRow({
     setShowNotes(false);
   };
 
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      time: Date.now(),
+    };
+    setSwiping(false);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const dx = e.touches[0].clientX - touchStartRef.current.x;
+    const dy = e.touches[0].clientY - touchStartRef.current.y;
+    // Only swipe horizontally — if vertical movement is larger, ignore
+    if (Math.abs(dy) > Math.abs(dx) && !swiping) {
+      touchStartRef.current = null;
+      return;
+    }
+    if (Math.abs(dx) > 10) setSwiping(true);
+    // Only allow right swipe (positive dx), capped at 100px
+    setSwipeX(Math.max(0, Math.min(100, dx)));
+  }, [swiping]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (swipeX >= swipeThreshold) {
+      onToggle();
+    }
+    setSwipeX(0);
+    setSwiping(false);
+    touchStartRef.current = null;
+  }, [swipeX, onToggle]);
+
+  const swipeProgress = Math.min(swipeX / swipeThreshold, 1);
+
   return (
-    <div className="border-b last:border-b-0">
-      <div className="flex items-center gap-1 px-2 py-2.5">
+    <div className="border-b last:border-b-0 relative overflow-hidden">
+      {/* Swipe reveal background */}
+      <div
+        className={cn(
+          'absolute inset-y-0 left-0 flex items-center pl-4 transition-opacity',
+          item.checked
+            ? 'bg-orange-100 dark:bg-orange-950/50'
+            : 'bg-green-100 dark:bg-green-950/50'
+        )}
+        style={{ width: `${swipeX}px`, opacity: swipeProgress }}
+      >
+        {swipeProgress >= 1 && (
+          item.checked ? (
+            <Circle className="h-5 w-5 text-orange-600" />
+          ) : (
+            <CheckCircle2 className="h-5 w-5 text-green-600" />
+          )
+        )}
+      </div>
+
+      <div
+        className="flex items-center gap-1 px-2 py-2.5 bg-background relative"
+        style={{
+          transform: `translateX(${swipeX}px)`,
+          transition: swiping ? 'none' : 'transform 200ms ease-out',
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         <DragHandle className="shrink-0 p-1" />
         <button
-          onClick={onToggle}
+          onClick={swiping ? undefined : onToggle}
           className="flex-1 flex items-center gap-3 min-h-[44px] text-left"
         >
           {item.checked ? (
