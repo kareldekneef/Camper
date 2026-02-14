@@ -73,6 +73,7 @@ interface AppState {
 
   // Trip items
   toggleTripItem: (itemId: string) => void;
+  togglePurchased: (itemId: string) => void;
   addTripItem: (tripId: string, name: string, categoryId: string, quantity?: number) => void;
   updateTripItem: (itemId: string, updates: Partial<TripItem>) => void;
   deleteTripItem: (itemId: string) => void;
@@ -376,6 +377,14 @@ export const useAppStore = create<AppState>()(
         set({
           tripItems: get().tripItems.map((ti) =>
             ti.id === itemId ? { ...ti, checked: !ti.checked } : ti
+          ),
+        });
+      },
+
+      togglePurchased: (itemId) => {
+        set({
+          tripItems: get().tripItems.map((ti) =>
+            ti.id === itemId ? { ...ti, purchased: !ti.purchased } : ti
           ),
         });
       },

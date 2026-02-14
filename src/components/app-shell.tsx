@@ -2,15 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, PlusCircle, List, Clock, Settings } from 'lucide-react';
+import { Home, PlusCircle, List, ShoppingCart, Clock, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/trip/new', label: 'Nieuw', icon: PlusCircle },
   { href: '/master', label: 'Lijst', icon: List },
-  { href: '/history', label: 'Geschiedenis', icon: Clock },
-  { href: '/settings', label: 'Instellingen', icon: Settings },
+  { href: '/shopping', label: 'Inkopen', icon: ShoppingCart },
+  { href: '/history', label: 'Historie', icon: Clock },
+  { href: '/settings', label: 'Opties', icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

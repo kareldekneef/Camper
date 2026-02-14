@@ -291,13 +291,13 @@ function hashState(state: {
   categories: { id: string; sortOrder: number }[];
   masterItems: { id: string; name: string }[];
   trips: { id: string; status: string }[];
-  tripItems: { id: string; checked: boolean; quantity?: number; sortOrder?: number }[];
+  tripItems: { id: string; checked: boolean; purchased?: boolean; quantity?: number; sortOrder?: number }[];
 }): string {
   const c = state.categories.map((x) => `${x.id}:${x.sortOrder}`).join(',');
   const m = state.masterItems.map((x) => `${x.id}:${x.name}`).join(',');
   const t = state.trips.map((x) => `${x.id}:${x.status}`).join(',');
   const ti = state.tripItems
-    .map((x) => `${x.id}:${x.checked ? 1 : 0}:${x.quantity ?? 1}:${x.sortOrder ?? 0}`)
+    .map((x) => `${x.id}:${x.checked ? 1 : 0}:${x.purchased ? 1 : 0}:${x.quantity ?? 1}:${x.sortOrder ?? 0}`)
     .join(',');
   return `${c}|${m}|${t}|${ti}`;
 }

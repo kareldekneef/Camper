@@ -72,6 +72,7 @@ export interface TripItem {
   name: string;
   categoryId: string;
   checked: boolean;
+  purchased?: boolean;  // for shopping items: not done → purchased → checked (packed)
   notes?: string;
   isCustom: boolean;
   quantity?: number;    // calculated or manually adjusted (defaults to 1)
