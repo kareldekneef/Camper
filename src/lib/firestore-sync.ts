@@ -125,6 +125,50 @@ export async function syncCollectionToFirestore<T extends { id: string }>(
   }
 }
 
+// --- Sync a collection under a group path ---
+
+export async function syncGroupCollection<T extends { id: string }>(
+  groupId: string,
+  collectionName: 'categories' | 'masterItems',
+  items: T[]
+): Promise<void> {
+  const snap = await getDocs(collection(db, 'groups', groupId, collectionName));
+  const existingIds = new Set(snap.docs.map((d) => d.id));
+  const newIds = new Set(items.map((i) => i.id));
+
+  const allOps: Array<{ type: 'set' | 'delete'; ref: ReturnType<typeof doc>; data?: Record<string, unknown> }> = [];
+
+  for (const item of items) {
+    allOps.push({
+      type: 'set',
+      ref: doc(db, 'groups', groupId, collectionName, item.id),
+      data: item as unknown as Record<string, unknown>,
+    });
+  }
+
+  for (const existingId of existingIds) {
+    if (!newIds.has(existingId)) {
+      allOps.push({
+        type: 'delete',
+        ref: doc(db, 'groups', groupId, collectionName, existingId),
+      });
+    }
+  }
+
+  for (let i = 0; i < allOps.length; i += 499) {
+    const chunk = allOps.slice(i, i + 499);
+    const batch = writeBatch(db);
+    for (const op of chunk) {
+      if (op.type === 'set' && op.data) {
+        batch.set(op.ref, op.data);
+      } else {
+        batch.delete(op.ref);
+      }
+    }
+    await batch.commit();
+  }
+}
+
 // --- Clear all Firestore data for a user ---
 
 export async function clearFirestoreData(uid: string): Promise<void> {

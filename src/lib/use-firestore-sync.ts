@@ -7,7 +7,15 @@ import {
   uploadAllToFirestore,
   downloadFromFirestore,
   syncCollectionToFirestore,
+  syncGroupCollection,
 } from './firestore-sync';
+import {
+  fetchUserGroupId,
+  fetchGroup,
+  downloadGroupMasterData,
+  downloadPersonalMasterData,
+  fetchSharedTrips,
+} from './group-sync';
 
 export function useFirestoreSync(user: User | null) {
   const isSyncingRef = useRef(false);
@@ -19,15 +27,65 @@ export function useFirestoreSync(user: User | null) {
     async (uid: string) => {
       try {
         const state = useAppStore.getState();
-        await Promise.all([
-          syncCollectionToFirestore(uid, 'categories', state.categories),
-          syncCollectionToFirestore(uid, 'masterItems', state.masterItems),
-          syncCollectionToFirestore(uid, 'trips', state.trips),
-          syncCollectionToFirestore(uid, 'tripItems', state.tripItems),
-        ]);
+        const group = state.currentGroup;
+
+        if (group) {
+          // Group mode: master data → group path, trips → user path
+          await Promise.all([
+            syncGroupCollection(group.id, 'categories', state.categories),
+            syncGroupCollection(group.id, 'masterItems', state.masterItems),
+            syncCollectionToFirestore(uid, 'trips', state.trips),
+            syncCollectionToFirestore(uid, 'tripItems', state.tripItems),
+          ]);
+        } else {
+          // Personal mode: everything → user path
+          await Promise.all([
+            syncCollectionToFirestore(uid, 'categories', state.categories),
+            syncCollectionToFirestore(uid, 'masterItems', state.masterItems),
+            syncCollectionToFirestore(uid, 'trips', state.trips),
+            syncCollectionToFirestore(uid, 'tripItems', state.tripItems),
+          ]);
+        }
       } catch (error) {
         console.error('Firestore sync write failed:', error);
-        // Silently fail — data is still in localStorage
+      }
+    },
+    []
+  );
+
+  // Refresh group data (shared trips + master data) — called on visibility change
+  const refreshGroupData = useCallback(
+    async (uid: string) => {
+      const state = useAppStore.getState();
+      const group = state.currentGroup;
+      if (!group) return;
+
+      try {
+        // Re-fetch group doc (members may have changed)
+        const freshGroup = await fetchGroup(group.id);
+        if (!freshGroup) return;
+
+        // Re-fetch group master data
+        const groupData = await downloadGroupMasterData(group.id);
+
+        // Re-fetch shared trips
+        const otherUids = Object.keys(freshGroup.members).filter((id) => id !== uid);
+        const shared = otherUids.length > 0
+          ? await fetchSharedTrips(group.id, uid, otherUids)
+          : { trips: [], tripItems: [] };
+
+        isSyncingRef.current = true;
+        useAppStore.setState({
+          currentGroup: freshGroup,
+          categories: groupData.categories,
+          masterItems: groupData.masterItems,
+          sharedTrips: shared.trips,
+          sharedTripItems: shared.tripItems,
+        });
+        prevHashRef.current = hashState(useAppStore.getState());
+        isSyncingRef.current = false;
+      } catch (error) {
+        console.error('Group refresh failed:', error);
       }
     },
     []
@@ -36,8 +94,13 @@ export function useFirestoreSync(user: User | null) {
   // On sign-in: download or migrate
   useEffect(() => {
     if (!user) {
-      // Reset hash when user signs out so next sign-in gets a clean start
       prevHashRef.current = '';
+      useAppStore.setState({
+        currentGroup: null,
+        sharedTrips: [],
+        sharedTripItems: [],
+        personalBackupItems: [],
+      });
       return;
     }
 
@@ -46,28 +109,79 @@ export function useFirestoreSync(user: User | null) {
     async function initSync() {
       isSyncingRef.current = true;
       try {
-        const firestoreData = await downloadFromFirestore(user!.uid);
+        // Step 1: Check if user belongs to a group
+        const groupId = await fetchUserGroupId(user!.uid);
 
         if (cancelled) return;
 
-        if (firestoreData === null) {
-          // First sign-in: Firestore is empty → upload localStorage data
-          await uploadAllToFirestore(user!.uid);
+        if (groupId) {
+          // Group mode
+          const [group, groupMasterData, personalData, personalMasterItems] = await Promise.all([
+            fetchGroup(groupId),
+            downloadGroupMasterData(groupId),
+            downloadFromFirestore(user!.uid),
+            downloadPersonalMasterData(user!.uid),
+          ]);
+
+          if (cancelled) return;
+
+          if (group) {
+            // Find personal items not in the group (by name, case-insensitive)
+            const groupItemNames = new Set(
+              groupMasterData.masterItems.map((i) => i.name.toLowerCase())
+            );
+            const backupItems = personalMasterItems.filter(
+              (i) => !groupItemNames.has(i.name.toLowerCase())
+            );
+
+            useAppStore.setState({
+              currentGroup: group,
+              categories: groupMasterData.categories,
+              masterItems: groupMasterData.masterItems,
+              trips: personalData?.trips ?? [],
+              tripItems: personalData?.tripItems ?? [],
+              personalBackupItems: backupItems,
+            });
+
+            // Fetch shared trips from other group members
+            const otherUids = Object.keys(group.members).filter(
+              (uid) => uid !== user!.uid
+            );
+            if (otherUids.length > 0) {
+              const shared = await fetchSharedTrips(group.id, user!.uid, otherUids);
+              if (!cancelled) {
+                useAppStore.setState({
+                  sharedTrips: shared.trips,
+                  sharedTripItems: shared.tripItems,
+                });
+              }
+            }
+          }
         } else {
-          // Firestore has data → load it into Zustand (replaces localStorage state)
-          useAppStore.setState({
-            categories: firestoreData.categories,
-            masterItems: firestoreData.masterItems,
-            trips: firestoreData.trips,
-            tripItems: firestoreData.tripItems,
-          });
+          // Personal mode (existing logic)
+          const firestoreData = await downloadFromFirestore(user!.uid);
+
+          if (cancelled) return;
+
+          if (firestoreData === null) {
+            await uploadAllToFirestore(user!.uid);
+          } else {
+            useAppStore.setState({
+              categories: firestoreData.categories,
+              masterItems: firestoreData.masterItems,
+              trips: firestoreData.trips,
+              tripItems: firestoreData.tripItems,
+              currentGroup: null,
+              sharedTrips: [],
+              sharedTripItems: [],
+              personalBackupItems: [],
+            });
+          }
         }
       } catch (error) {
         console.error('Firestore sync init failed:', error);
-        // App continues working with localStorage data
       } finally {
         if (!cancelled) {
-          // Set initial hash to prevent immediate re-sync
           prevHashRef.current = hashState(useAppStore.getState());
           isSyncingRef.current = false;
         }
@@ -86,15 +200,12 @@ export function useFirestoreSync(user: User | null) {
     if (!user) return;
 
     const unsubscribe = useAppStore.subscribe((state) => {
-      // Don't sync while initial download is in progress
       if (isSyncingRef.current) return;
 
-      // Change detection via lightweight hash
       const currentHash = hashState(state);
       if (currentHash === prevHashRef.current) return;
       prevHashRef.current = currentHash;
 
-      // Debounce: wait 2 seconds after last change before syncing
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -111,6 +222,20 @@ export function useFirestoreSync(user: User | null) {
       }
     };
   }, [user, syncToFirestore]);
+
+  // Refresh group data when app becomes visible (tab/PWA focus)
+  useEffect(() => {
+    if (!user) return;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshGroupData(user.uid);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [user, refreshGroupData]);
 }
 
 function hashState(state: {
@@ -119,7 +244,6 @@ function hashState(state: {
   trips: { id: string; status: string }[];
   tripItems: { id: string; checked: boolean; quantity?: number; sortOrder?: number }[];
 }): string {
-  // Lightweight hash: captures additions, deletions, and common mutations
   const c = state.categories.map((x) => `${x.id}:${x.sortOrder}`).join(',');
   const m = state.masterItems.map((x) => `${x.id}:${x.name}`).join(',');
   const t = state.trips.map((x) => `${x.id}:${x.status}`).join(',');

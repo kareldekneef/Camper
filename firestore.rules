@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users: owner can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Sub-collections (categories, masterItems, trips, tripItems)
+      match /{subcollection}/{docId} {
+        // Owner can always read/write
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+
+        // Group members can read trips/tripItems if they are in sharedWith
+        // (For shared trips viewing — read access to other members' trips)
+        allow read: if request.auth != null
+          && subcollection in ['trips', 'tripItems']
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.groupId != null
+          && exists(/databases/$(database)/documents/groups/$(get(/databases/$(database)/documents/users/$(userId)).data.groupId))
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(get(/databases/$(database)/documents/users/$(userId)).data.groupId)).data.members;
+      }
+    }
+
+    // Groups: authenticated users can read, members can write
+    match /groups/{groupId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+        && request.auth.uid in resource.data.members;
+
+      // Group sub-collections (categories, masterItems)
+      match /{subcollection}/{docId} {
+        allow read: if request.auth != null
+          && exists(/databases/$(database)/documents/groups/$(groupId))
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+        allow write: if request.auth != null
+          && exists(/databases/$(database)/documents/groups/$(groupId))
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+      }
+    }
+  }
+}

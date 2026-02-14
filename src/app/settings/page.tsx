@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/auth-context';
 import { clearFirestoreData } from '@/lib/firestore-sync';
 import { GoogleIcon } from '@/components/google-icon';
 import { cn } from '@/lib/utils';
+import { GroupCard } from '@/components/group-card';
 
 export default function SettingsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -191,6 +192,9 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {/* Group */}
+        {user && <GroupCard />}
+
         {/* Theme */}
         <Card>
           <CardHeader className="pb-3">
@@ -306,7 +310,7 @@ export default function SettingsPage() {
         </Card>
 
         <div className="text-center text-xs text-muted-foreground py-4">
-          CamperPack v5.0 — Gebouwd met ❤️ voor camperreizen
+          CamperPack v5.1 — Gebouwd met ❤️ voor camperreizen
         </div>
       </div>
     </div>

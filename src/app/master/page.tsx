@@ -31,6 +31,7 @@ import {
   X,
   FolderPlus,
   Users,
+  UsersRound,
 } from 'lucide-react';
 import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
 import { cn } from '@/lib/utils';
@@ -48,6 +49,9 @@ export default function MasterListPage() {
   const updateCategory = useAppStore((s) => s.updateCategory);
   const deleteCategory = useAppStore((s) => s.deleteCategory);
   const reorderCategories = useAppStore((s) => s.reorderCategories);
+  const currentGroup = useAppStore((s) => s.currentGroup);
+  const personalBackupItems = useAppStore((s) => s.personalBackupItems);
+  const addPersonalItemToGroup = useAppStore((s) => s.addPersonalItemToGroup);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -167,9 +171,19 @@ export default function MasterListPage() {
   return (
     <div className="mx-auto max-w-lg px-4 pt-6">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold">Standaardlijst</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold">Standaardlijst</h1>
+          {currentGroup && (
+            <Badge className="bg-blue-100 text-blue-800 gap-1">
+              <UsersRound className="h-3 w-3" />
+              {currentGroup.name}
+            </Badge>
+          )}
+        </div>
         <p className="text-sm text-muted-foreground">
-          Beheer je standaard paklijst. Sleep items om te herordenen.
+          {currentGroup
+            ? 'Gedeelde lijst van je groep. Wijzigingen zijn zichtbaar voor alle leden.'
+            : 'Beheer je standaard paklijst. Sleep items om te herordenen.'}
         </p>
       </div>
 
@@ -462,6 +476,41 @@ export default function MasterListPage() {
                           );
                         })}
                       </SortableList>
+
+                      {/* Personal backup items suggestion for this category */}
+                      {currentGroup && (() => {
+                        const catBackupItems = personalBackupItems.filter(
+                          (bi) => bi.categoryId === category.id
+                        );
+                        if (catBackupItems.length === 0) return null;
+                        return (
+                          <div className="border-t bg-amber-50 dark:bg-amber-950/30">
+                            <div className="px-3 py-1.5 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                              <Users className="h-3 w-3" />
+                              Jouw persoonlijke items
+                            </div>
+                            {catBackupItems.map((bi) => (
+                              <div
+                                key={bi.id}
+                                className="flex items-center gap-2 px-3 py-2 border-t border-amber-200 dark:border-amber-800"
+                              >
+                                <span className="flex-1 text-sm text-amber-800 dark:text-amber-300 truncate">
+                                  {bi.name}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900"
+                                  onClick={() => addPersonalItemToGroup(bi.id)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Toevoegen
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -495,6 +544,47 @@ export default function MasterListPage() {
             ))}
           </div>
         )}
+
+        {/* Personal backup items in categories not shown above */}
+        {currentGroup && !searchQuery && (() => {
+          const shownCategoryIds = new Set([
+            ...sortedCategories.map((c) => c.id),
+            ...emptyCategories.map((c) => c.id),
+          ]);
+          const orphanBackupItems = personalBackupItems.filter(
+            (bi) => !shownCategoryIds.has(bi.categoryId)
+          );
+          if (orphanBackupItems.length === 0) return null;
+          return (
+            <div className="mt-4">
+              <h3 className="text-sm font-medium text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Overige persoonlijke items
+              </h3>
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 overflow-hidden">
+                {orphanBackupItems.map((bi) => (
+                  <div
+                    key={bi.id}
+                    className="flex items-center gap-2 px-3 py-2 border-b border-amber-200 dark:border-amber-800 last:border-b-0"
+                  >
+                    <span className="flex-1 text-sm text-amber-800 dark:text-amber-300 truncate">
+                      {bi.name}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900"
+                      onClick={() => addPersonalItemToGroup(bi.id)}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Toevoegen
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Edit item dialog */}

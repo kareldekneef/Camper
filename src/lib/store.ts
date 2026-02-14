@@ -9,6 +9,7 @@ import {
   Temperature,
   Duration,
   Activity,
+  Group,
 } from './types';
 import { defaultCategories, defaultMasterItems } from './seed-data';
 
@@ -18,6 +19,12 @@ interface AppState {
   trips: Trip[];
   tripItems: TripItem[];
   initialized: boolean;
+
+  // Group state (not persisted to localStorage)
+  currentGroup: Group | null;
+  sharedTrips: Trip[];
+  sharedTripItems: TripItem[];
+  personalBackupItems: MasterItem[];
 
   // Init
   initialize: () => void;
@@ -44,10 +51,18 @@ interface AppState {
     duration: Duration;
     peopleCount: number;
     activities: Activity[];
+    creatorId?: string;
+    shareWithGroup?: boolean;
   }) => string;
   updateTrip: (id: string, updates: Partial<Trip>) => void;
   deleteTrip: (id: string) => void;
   copyTrip: (tripId: string, newName: string) => string;
+
+  // Groups
+  setCurrentGroup: (group: Group | null) => void;
+  setSharedTrips: (trips: Trip[], tripItems: TripItem[]) => void;
+  setPersonalBackupItems: (items: MasterItem[]) => void;
+  addPersonalItemToGroup: (itemId: string) => void;
 
   // Trip items
   toggleTripItem: (itemId: string) => void;
@@ -107,6 +122,10 @@ export const useAppStore = create<AppState>()(
       trips: [],
       tripItems: [],
       initialized: false,
+      currentGroup: null,
+      sharedTrips: [],
+      sharedTripItems: [],
+      personalBackupItems: [],
 
       initialize: () => {
         const state = get();
@@ -198,11 +217,20 @@ export const useAppStore = create<AppState>()(
       createTrip: (params) => {
         const state = get();
         const tripId = uuid();
+        const group = state.currentGroup;
+        const { creatorId, shareWithGroup, ...tripParams } = params;
         const trip: Trip = {
           id: tripId,
-          ...params,
+          ...tripParams,
           status: 'planning',
           createdAt: new Date().toISOString(),
+          ...(group && shareWithGroup !== false
+            ? {
+                groupId: group.id,
+                creatorId: creatorId,
+                sharedWith: Object.keys(group.members),
+              }
+            : {}),
         };
 
         let sortCounter = 0;
@@ -282,6 +310,41 @@ export const useAppStore = create<AppState>()(
         });
 
         return newTripId;
+      },
+
+      // Groups
+      setCurrentGroup: (group) => {
+        set({ currentGroup: group });
+      },
+
+      setSharedTrips: (trips, tripItems) => {
+        set({ sharedTrips: trips, sharedTripItems: tripItems });
+      },
+
+      setPersonalBackupItems: (items) => {
+        set({ personalBackupItems: items });
+      },
+
+      addPersonalItemToGroup: (itemId) => {
+        const state = get();
+        const item = state.personalBackupItems.find((i) => i.id === itemId);
+        if (!item) return;
+        const catItems = state.masterItems.filter(
+          (i) => i.categoryId === item.categoryId
+        );
+        const maxOrder = Math.max(
+          ...catItems.map((i) => i.sortOrder ?? 0),
+          -1
+        );
+        set({
+          masterItems: [
+            ...state.masterItems,
+            { ...item, id: uuid(), sortOrder: maxOrder + 1 },
+          ],
+          personalBackupItems: state.personalBackupItems.filter(
+            (i) => i.id !== itemId
+          ),
+        });
       },
 
       // Trip items
@@ -376,6 +439,15 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'camperpack-storage',
+      partialize: (state) => ({
+        categories: state.categories,
+        masterItems: state.masterItems,
+        trips: state.trips,
+        tripItems: state.tripItems,
+        initialized: state.initialized,
+        // Excluded from localStorage (fetched from Firestore):
+        // currentGroup, sharedTrips, sharedTripItems, personalBackupItems
+      }),
     }
   )
 );

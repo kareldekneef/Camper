@@ -21,12 +21,13 @@ import {
   activityIcons,
   temperatureIcons,
 } from '@/lib/constants';
-import { ArrowLeft, Check, CalendarDays } from 'lucide-react';
+import { ArrowLeft, Check, CalendarDays, UsersRound } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import type { DateRange } from 'react-day-picker';
+import { useAuth } from '@/lib/auth-context';
 
 function calculateNights(from: Date, to: Date): number {
   return Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
@@ -41,7 +42,9 @@ function calculateDuration(from: Date, to: Date): Duration {
 
 export default function NewTripPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const createTrip = useAppStore((s) => s.createTrip);
+  const currentGroup = useAppStore((s) => s.currentGroup);
 
   const [name, setName] = useState('');
   const [destination, setDestination] = useState('');
@@ -50,6 +53,7 @@ export default function NewTripPage() {
   const [temperature, setTemperature] = useState<Temperature>('mixed');
   const [peopleCount, setPeopleCount] = useState(2);
   const [activities, setActivities] = useState<Activity[]>(['relaxation']);
+  const [shareWithGroup, setShareWithGroup] = useState(true);
 
   const allActivities = Object.keys(activityLabels) as Activity[];
 
@@ -96,6 +100,8 @@ export default function NewTripPage() {
       duration,
       peopleCount,
       activities,
+      creatorId: user?.uid,
+      shareWithGroup: currentGroup ? shareWithGroup : false,
     });
 
     router.push(`/trip/${tripId}`);
@@ -276,6 +282,42 @@ export default function NewTripPage() {
             </div>
           </CardContent>
         </Card>
+
+        {currentGroup && (
+          <Card>
+            <CardContent className="pt-6">
+              <button
+                type="button"
+                onClick={() => setShareWithGroup(!shareWithGroup)}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg border p-4 w-full text-left transition-colors',
+                  shareWithGroup
+                    ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30'
+                    : 'border-border'
+                )}
+              >
+                <UsersRound className={cn(
+                  'h-5 w-5 shrink-0',
+                  shareWithGroup ? 'text-blue-600' : 'text-muted-foreground'
+                )} />
+                <div className="flex-1">
+                  <p className={cn(
+                    'text-sm font-medium',
+                    shareWithGroup ? 'text-blue-700 dark:text-blue-300' : ''
+                  )}>
+                    Deel met groep
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {shareWithGroup
+                      ? `Zichtbaar voor ${currentGroup.name}`
+                      : 'Alleen voor jou zichtbaar'}
+                  </p>
+                </div>
+                {shareWithGroup && <Check className="h-5 w-5 text-blue-600 shrink-0" />}
+              </button>
+            </CardContent>
+          </Card>
+        )}
 
         <Button type="submit" className="w-full" size="lg" disabled={!name.trim()}>
           Trip Aanmaken

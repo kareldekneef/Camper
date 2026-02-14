@@ -25,6 +25,26 @@ export interface Category {
   sortOrder: number;
 }
 
+export type GroupRole = 'owner' | 'member';
+
+export interface GroupMember {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL: string | null;
+  role: GroupRole;
+  joinedAt: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  ownerId: string;
+  inviteCode: string;
+  members: Record<string, GroupMember>;
+  createdAt: string;
+}
+
 export interface Trip {
   id: string;
   name: string;
@@ -39,6 +59,10 @@ export interface Trip {
   copiedFromTripId?: string;
   createdAt: string;
   notes?: string;
+  // Group fields (optional — absent for personal trips)
+  groupId?: string;
+  sharedWith?: string[];    // UIDs who can view this trip
+  creatorId?: string;       // UID of trip creator
 }
 
 export interface TripItem {

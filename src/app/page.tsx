@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
-import { PlusCircle, Copy, Trash2, MapPin, Calendar, Users, Thermometer } from 'lucide-react';
+import { PlusCircle, Copy, Trash2, MapPin, Calendar, Users, Thermometer, UsersRound } from 'lucide-react';
 import { temperatureLabels, temperatureIcons } from '@/lib/constants';
-import { Trip } from '@/lib/types';
+import { Trip, GroupMember } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -156,8 +156,75 @@ function TripCard({ trip }: { trip: Trip }) {
   );
 }
 
+function SharedTripCard({ trip, creatorName }: { trip: Trip; creatorName: string }) {
+  const sharedTripItems = useAppStore((s) => s.sharedTripItems);
+  const tripItems = sharedTripItems.filter((ti) => ti.tripId === trip.id);
+
+  const checked = tripItems.filter((ti) => ti.checked).length;
+  const total = tripItems.length;
+  const progress = total > 0 ? (checked / total) * 100 : 0;
+
+  const statusColors: Record<string, string> = {
+    planning: 'bg-blue-100 text-blue-800',
+    active: 'bg-green-100 text-green-800',
+    completed: 'bg-gray-100 text-gray-800',
+  };
+
+  const statusLabels: Record<string, string> = {
+    planning: 'Planning',
+    active: 'Actief',
+    completed: 'Voltooid',
+  };
+
+  return (
+    <Link href={`/trip/shared/${trip.id}?creator=${trip.creatorId}`}>
+      <Card className="relative border-blue-200 dark:border-blue-800">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between">
+            <CardTitle className="text-lg">{trip.name}</CardTitle>
+            <Badge className={statusColors[trip.status]} variant="secondary">
+              {statusLabels[trip.status]}
+            </Badge>
+          </div>
+          <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+            <UsersRound className="h-3 w-3" />
+            {creatorName}
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            {trip.destination && (
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5" />
+                {trip.destination}
+              </span>
+            )}
+            <span className="flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5" />
+              {new Date(trip.startDate).toLocaleDateString('nl-BE')}
+            </span>
+            <span className="flex items-center gap-1">
+              <Thermometer className="h-3.5 w-3.5" />
+              {temperatureIcons[trip.temperature]} {temperatureLabels[trip.temperature]}
+            </span>
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between text-sm">
+              <span>{checked} / {total} ingepakt</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
 export default function HomePage() {
   const trips = useAppStore((s) => s.trips);
+  const currentGroup = useAppStore((s) => s.currentGroup);
+  const sharedTrips = useAppStore((s) => s.sharedTrips);
 
   const activeTrips = trips.filter((t) => t.status !== 'completed');
   const completedTrips = trips.filter((t) => t.status === 'completed');
@@ -207,6 +274,29 @@ export default function HomePage() {
                 .map((trip) => (
                   <TripCard key={trip.id} trip={trip} />
                 ))}
+            </div>
+          )}
+
+          {currentGroup && sharedTrips.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <UsersRound className="h-5 w-5 text-blue-600" />
+                Gedeelde Trips
+              </h2>
+              {sharedTrips
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                .map((trip) => {
+                  const creator = trip.creatorId
+                    ? currentGroup.members[trip.creatorId]
+                    : null;
+                  return (
+                    <SharedTripCard
+                      key={trip.id}
+                      trip={trip}
+                      creatorName={creator?.displayName || 'Onbekend'}
+                    />
+                  );
+                })}
             </div>
           )}
         </div>
