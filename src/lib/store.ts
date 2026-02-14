@@ -521,6 +521,22 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'camperpack-storage',
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        const state = persistedState as Record<string, unknown>;
+        if (version === 0) {
+          // Rename "Shopping / Voorbereiding" → "Shopping"
+          const categories = state.categories as Category[] | undefined;
+          if (categories) {
+            state.categories = categories.map((c) =>
+              c.id === 'cat-shopping' || c.name.toLowerCase().includes('voorbereiding')
+                ? { ...c, name: 'Shopping' }
+                : c
+            );
+          }
+        }
+        return state;
+      },
       partialize: (state) => ({
         categories: state.categories,
         masterItems: state.masterItems,
