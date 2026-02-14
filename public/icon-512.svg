@@ -1,4 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="77" fill="#1a5c2a"/>
-  <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-size="256">🚐</text>
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#1a5c2a"/>
+
+  <!-- Backpack body -->
+  <rect x="148" y="160" width="216" height="240" rx="28" fill="#ffffff" opacity="0.95"/>
+
+  <!-- Backpack top strap -->
+  <path d="M196 188 C196 148, 220 128, 256 128 C292 128, 316 148, 316 188"
+        fill="none" stroke="#ffffff" stroke-width="22" stroke-linecap="round" opacity="0.95"/>
+
+  <!-- Checklist check 1 -->
+  <path d="M192 216 L208 232 L232 204" fill="none" stroke="#2d9a4e" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="252" y1="218" x2="328" y2="218" stroke="#1a5c2a" stroke-width="10" stroke-linecap="round" opacity="0.35"/>
+
+  <!-- Checklist check 2 -->
+  <path d="M192 264 L208 280 L232 252" fill="none" stroke="#2d9a4e" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="252" y1="266" x2="312" y2="266" stroke="#1a5c2a" stroke-width="10" stroke-linecap="round" opacity="0.35"/>
+
+  <!-- Unchecked box 3 -->
+  <rect x="192" y="306" width="28" height="28" rx="6" fill="none" stroke="#1a5c2a" stroke-width="6" opacity="0.3"/>
+  <line x1="236" y1="320" x2="300" y2="320" stroke="#1a5c2a" stroke-width="10" stroke-linecap="round" opacity="0.25"/>
+
+  <!-- Unchecked box 4 -->
+  <rect x="192" y="350" width="28" height="28" rx="6" fill="none" stroke="#1a5c2a" stroke-width="6" opacity="0.3"/>
+  <line x1="236" y1="364" x2="320" y2="364" stroke="#1a5c2a" stroke-width="10" stroke-linecap="round" opacity="0.25"/>
 </svg>
