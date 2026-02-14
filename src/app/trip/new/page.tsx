@@ -7,13 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Calendar } from '@/components/ui/calendar';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Activity, Duration, Temperature } from '@/lib/types';
 import {
   temperatureLabels,
@@ -22,9 +21,23 @@ import {
   activityIcons,
   temperatureIcons,
 } from '@/lib/constants';
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { nl } from 'date-fns/locale';
+import type { DateRange } from 'react-day-picker';
+
+function calculateNights(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function calculateDuration(from: Date, to: Date): Duration {
+  const nights = calculateNights(from, to);
+  if (nights <= 3) return 'weekend';
+  if (nights <= 7) return 'week';
+  return 'extended';
+}
 
 export default function NewTripPage() {
   const router = useRouter();
@@ -32,14 +45,21 @@ export default function NewTripPage() {
 
   const [name, setName] = useState('');
   const [destination, setDestination] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [temperature, setTemperature] = useState<Temperature>('mixed');
-  const [duration, setDuration] = useState<Duration>('week');
   const [peopleCount, setPeopleCount] = useState(2);
   const [activities, setActivities] = useState<Activity[]>(['relaxation']);
 
   const allActivities = Object.keys(activityLabels) as Activity[];
+
+  // Derived values from date range
+  const nights = dateRange?.from && dateRange?.to
+    ? calculateNights(dateRange.from, dateRange.to)
+    : null;
+  const duration: Duration = dateRange?.from && dateRange?.to
+    ? calculateDuration(dateRange.from, dateRange.to)
+    : 'week';
 
   const toggleActivity = (activity: Activity) => {
     setActivities((prev) =>
@@ -49,15 +69,29 @@ export default function NewTripPage() {
     );
   };
 
+  const handleDateSelect = (range: DateRange | undefined) => {
+    setDateRange(range);
+    // Auto-close popover when both dates are selected
+    if (range?.from && range?.to) {
+      setTimeout(() => setCalendarOpen(false), 300);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
+    const today = new Date().toISOString().split('T')[0];
+
     const tripId = createTrip({
       name: name.trim(),
       destination: destination.trim(),
-      startDate: startDate || new Date().toISOString().split('T')[0],
-      endDate: endDate || new Date().toISOString().split('T')[0],
+      startDate: dateRange?.from
+        ? format(dateRange.from, 'yyyy-MM-dd')
+        : today,
+      endDate: dateRange?.to
+        ? format(dateRange.to, 'yyyy-MM-dd')
+        : today,
       temperature,
       duration,
       peopleCount,
@@ -65,6 +99,23 @@ export default function NewTripPage() {
     });
 
     router.push(`/trip/${tripId}`);
+  };
+
+  const formatDateRange = () => {
+    if (!dateRange?.from) return null;
+    if (!dateRange.to) return format(dateRange.from, 'd MMM yyyy', { locale: nl });
+    // Same month and year
+    if (
+      dateRange.from.getMonth() === dateRange.to.getMonth() &&
+      dateRange.from.getFullYear() === dateRange.to.getFullYear()
+    ) {
+      return `${format(dateRange.from, 'd', { locale: nl })} – ${format(dateRange.to, 'd MMM yyyy', { locale: nl })}`;
+    }
+    // Same year
+    if (dateRange.from.getFullYear() === dateRange.to.getFullYear()) {
+      return `${format(dateRange.from, 'd MMM', { locale: nl })} – ${format(dateRange.to, 'd MMM yyyy', { locale: nl })}`;
+    }
+    return `${format(dateRange.from, 'd MMM yyyy', { locale: nl })} – ${format(dateRange.to, 'd MMM yyyy', { locale: nl })}`;
   };
 
   return (
@@ -103,25 +154,37 @@ export default function NewTripPage() {
                 placeholder="bv. Côte d'Azur"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="startDate">Vertrekdatum</Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="endDate">Terugkomst</Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label>Reisperiode</Label>
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      'w-full justify-start text-left font-normal',
+                      !dateRange?.from && 'text-muted-foreground'
+                    )}
+                  >
+                    <CalendarDays className="mr-2 h-4 w-4" />
+                    {formatDateRange() || 'Selecteer datums'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={handleDateSelect}
+                    numberOfMonths={1}
+                    locale={nl}
+                    defaultMonth={dateRange?.from || new Date()}
+                  />
+                </PopoverContent>
+              </Popover>
+              {nights !== null && (
+                <p className="text-sm text-muted-foreground">
+                  {durationLabels[duration].split(' ')[0]} — {nights} {nights === 1 ? 'nacht' : 'nachten'}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -157,25 +220,6 @@ export default function NewTripPage() {
             <CardTitle className="text-base">Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Duur</Label>
-              <Select
-                value={duration}
-                onValueChange={(v) => setDuration(v as Duration)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(durationLabels) as Duration[]).map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {durationLabels[d]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-2">
               <Label>Aantal personen</Label>
               <div className="flex items-center gap-3">
