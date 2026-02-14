@@ -12,8 +12,7 @@ service cloud.firestore {
         // Owner can always read/write
         allow read, write: if request.auth != null && request.auth.uid == userId;
 
-        // Group members can read trips/tripItems if they are in sharedWith
-        // (For shared trips viewing — read access to other members' trips)
+        // Group members can read trips/tripItems if they are in the same group
         allow read: if request.auth != null
           && subcollection in ['trips', 'tripItems']
           && exists(/databases/$(database)/documents/users/$(userId))
@@ -23,11 +22,23 @@ service cloud.firestore {
       }
     }
 
-    // Groups: authenticated users can read, members can write
+    // Groups
     match /groups/{groupId} {
+      // Any authenticated user can read groups (needed for invite code lookup)
       allow read: if request.auth != null;
+
+      // Any authenticated user can create a group
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null
+
+      // Update: existing members OR new user joining (adding themselves to members)
+      allow update: if request.auth != null
+        && (
+          request.auth.uid in resource.data.members
+          || request.auth.uid in request.resource.data.members
+        );
+
+      // Delete: only existing members
+      allow delete: if request.auth != null
         && request.auth.uid in resource.data.members;
 
       // Group sub-collections (categories, masterItems)
