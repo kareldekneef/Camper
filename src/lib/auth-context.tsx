@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -14,7 +14,6 @@ import { auth, googleProvider } from './firebase';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  isIOSPWA: boolean;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -22,7 +21,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
-  isIOSPWA: false,
   signInWithGoogle: async () => {},
   signOut: async () => {},
 });
@@ -39,28 +37,58 @@ function detectStandalone(): boolean {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isIOSPWA, setIsIOSPWA] = useState(false);
+  const redirectCheckedRef = useRef(false);
+  const authStateReadyRef = useRef(false);
 
   useEffect(() => {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    setIsIOSPWA(detectStandalone() && isIOS);
-  }, []);
+    let resolved = false;
 
-  // Handle redirect result when returning from Google sign-in
-  useEffect(() => {
-    if (detectStandalone()) {
-      getRedirectResult(auth).catch((error) => {
-        console.error('Redirect sign-in error:', error);
-      });
-    }
-  }, []);
+    // Step 1: Process redirect result first (for PWA returning from Google)
+    // This must complete before we allow loading to become false
+    const redirectPromise = detectStandalone()
+      ? getRedirectResult(auth)
+          .then((result) => {
+            if (result?.user) {
+              setUser(result.user);
+            }
+          })
+          .catch((error) => {
+            console.error('Redirect sign-in error:', error);
+          })
+      : Promise.resolve();
 
-  useEffect(() => {
+    redirectPromise.finally(() => {
+      redirectCheckedRef.current = true;
+      // If auth state already resolved while we were checking redirect, finish loading
+      if (authStateReadyRef.current && !resolved) {
+        resolved = true;
+        setLoading(false);
+      }
+    });
+
+    // Step 2: Listen for auth state changes (also restores persisted sessions)
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
-      setLoading(false);
+      authStateReadyRef.current = true;
+      // Only stop loading if redirect check is also done
+      if (redirectCheckedRef.current && !resolved) {
+        resolved = true;
+        setLoading(false);
+      }
     });
-    return unsubscribe;
+
+    // Safety timeout: never stay loading forever (5 seconds max)
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        setLoading(false);
+      }
+    }, 5000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
@@ -92,7 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, isIOSPWA, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );
