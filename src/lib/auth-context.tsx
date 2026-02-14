@@ -38,7 +38,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('CamperPack: auth listener registering...');
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      console.log('CamperPack: auth state changed:', firebaseUser?.email ?? 'not signed in');
       setUser(firebaseUser);
       setLoading(false);
     });
@@ -60,7 +62,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Safari PWA mode blocks popups — use redirect
         await signInWithRedirect(auth, googleProvider);
       } else {
-        await signInWithPopup(auth, googleProvider);
+        const result = await signInWithPopup(auth, googleProvider);
+        console.log('CamperPack: popup sign-in result:', result.user?.email);
       }
     } catch (error: unknown) {
       const firebaseError = error as { code?: string };

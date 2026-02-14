@@ -34,8 +34,9 @@ export default function SettingsPage() {
     setSigningIn(true);
     try {
       await signInWithGoogle();
-    } catch {
-      setAuthError('Inloggen mislukt. Probeer opnieuw.');
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      setAuthError(`Inloggen mislukt: ${err.code || err.message || 'onbekende fout'}`);
     } finally {
       setSigningIn(false);
     }
