@@ -13,10 +13,16 @@ import {
   ShoppingBag,
   PackageCheck,
   Package,
+  List,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { TripItem } from '@/lib/types';
+import { TripItem, Trip } from '@/lib/types';
 
 // Shopping category detection
 function isShoppingCategory(name: string): boolean {
@@ -24,6 +30,7 @@ function isShoppingCategory(name: string): boolean {
 }
 
 type ShoppingFilter = 'todo' | 'purchased' | 'all';
+type ViewMode = 'aggregated' | 'per-trip';
 
 // Aggregated item across trips
 interface AggregatedItem {
@@ -36,6 +43,15 @@ interface AggregatedItem {
   anyPurchased: boolean;
 }
 
+// Per-trip group
+interface TripGroup {
+  trip: Trip;
+  items: TripItem[];
+  todoCount: number;
+  purchasedCount: number;
+  packedCount: number;
+}
+
 export default function ShoppingPage() {
   const trips = useAppStore((s) => s.trips);
   const tripItems = useAppStore((s) => s.tripItems);
@@ -45,19 +61,27 @@ export default function ShoppingPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<ShoppingFilter>('todo');
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('aggregated');
+  const [collapsedTrips, setCollapsedTrips] = useState<Set<string>>(new Set());
 
-  // Only active/planning trips (not completed)
-  const activeTrips = useMemo(
-    () => trips.filter((t) => t.status !== 'completed'),
-    [trips]
+  // Filter trips based on active toggle
+  const visibleTrips = useMemo(
+    () => activeOnly ? trips.filter((t) => t.status !== 'completed') : trips,
+    [trips, activeOnly]
   );
-  const activeTripIds = useMemo(
-    () => new Set(activeTrips.map((t) => t.id)),
-    [activeTrips]
+  const visibleTripIds = useMemo(
+    () => new Set(visibleTrips.map((t) => t.id)),
+    [visibleTrips]
   );
   const tripNameMap = useMemo(
-    () => Object.fromEntries(activeTrips.map((t) => [t.id, t.name])),
-    [activeTrips]
+    () => Object.fromEntries(trips.map((t) => [t.id, t.name])),
+    [trips]
+  );
+
+  const activeCount = useMemo(
+    () => trips.filter((t) => t.status !== 'completed').length,
+    [trips]
   );
 
   // Get shopping category IDs
@@ -66,14 +90,19 @@ export default function ShoppingPage() {
     [categories]
   );
 
+  // All shopping items from visible trips
+  const shoppingItems = useMemo(
+    () => tripItems.filter(
+      (ti) => visibleTripIds.has(ti.tripId) && shoppingCategoryIds.has(ti.categoryId)
+    ),
+    [tripItems, visibleTripIds, shoppingCategoryIds]
+  );
+
   // Aggregate shopping items across trips (group by name)
   const aggregatedItems = useMemo(() => {
-    const activeItems = tripItems.filter(
-      (ti) => activeTripIds.has(ti.tripId) && shoppingCategoryIds.has(ti.categoryId)
-    );
     const groupMap = new Map<string, AggregatedItem>();
 
-    for (const item of activeItems) {
+    for (const item of shoppingItems) {
       const key = item.name.toLowerCase().trim();
       const existing = groupMap.get(key);
 
@@ -101,9 +130,39 @@ export default function ShoppingPage() {
     }
 
     return Array.from(groupMap.values());
-  }, [tripItems, activeTripIds, tripNameMap, shoppingCategoryIds]);
+  }, [shoppingItems, tripNameMap]);
 
-  // Filter items
+  // Per-trip groups
+  const tripGroups = useMemo(() => {
+    const groupMap = new Map<string, TripItem[]>();
+
+    for (const item of shoppingItems) {
+      const existing = groupMap.get(item.tripId);
+      if (existing) {
+        existing.push(item);
+      } else {
+        groupMap.set(item.tripId, [item]);
+      }
+    }
+
+    const groups: TripGroup[] = [];
+    for (const trip of visibleTrips) {
+      const items = groupMap.get(trip.id);
+      if (items && items.length > 0) {
+        groups.push({
+          trip,
+          items,
+          todoCount: items.filter((i) => !i.purchased && !i.checked).length,
+          purchasedCount: items.filter((i) => i.purchased && !i.checked).length,
+          packedCount: items.filter((i) => i.checked).length,
+        });
+      }
+    }
+
+    return groups;
+  }, [shoppingItems, visibleTrips]);
+
+  // Filter aggregated items
   const filteredItems = useMemo(() => {
     let items = aggregatedItems;
 
@@ -127,6 +186,34 @@ export default function ShoppingPage() {
     });
   }, [aggregatedItems, filter, searchQuery]);
 
+  // Filter per-trip groups
+  const filteredTripGroups = useMemo(() => {
+    return tripGroups.map((group) => {
+      let items = group.items;
+
+      if (filter === 'todo') {
+        items = items.filter((i) => !i.checked);
+      } else if (filter === 'purchased') {
+        items = items.filter((i) => i.purchased && !i.checked);
+      }
+
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        items = items.filter((i) => i.name.toLowerCase().includes(q));
+      }
+
+      // Sort: unpurchased first, then purchased, then packed
+      items = [...items].sort((a, b) => {
+        const aOrder = a.checked ? 2 : a.purchased ? 1 : 0;
+        const bOrder = b.checked ? 2 : b.purchased ? 1 : 0;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return a.name.localeCompare(b.name, 'nl');
+      });
+
+      return { ...group, items };
+    }).filter((group) => group.items.length > 0);
+  }, [tripGroups, filter, searchQuery]);
+
   // Toggle purchased on all sub-items
   const handleTogglePurchased = (agg: AggregatedItem) => {
     for (const item of agg.items) {
@@ -149,12 +236,24 @@ export default function ShoppingPage() {
     }
   };
 
+  const toggleCollapsedTrip = (tripId: string) => {
+    setCollapsedTrips((prev) => {
+      const next = new Set(prev);
+      if (next.has(tripId)) {
+        next.delete(tripId);
+      } else {
+        next.add(tripId);
+      }
+      return next;
+    });
+  };
+
   // Stats
   const totalTodo = aggregatedItems.filter((i) => !i.allPurchased && !i.allPacked).length;
   const totalPurchased = aggregatedItems.filter((i) => i.allPurchased && !i.allPacked).length;
   const totalPacked = aggregatedItems.filter((i) => i.allPacked).length;
 
-  if (activeTrips.length === 0) {
+  if (trips.length === 0) {
     return (
       <div className="mx-auto max-w-lg px-4 pt-6">
         <div className="mb-6">
@@ -165,7 +264,7 @@ export default function ShoppingPage() {
         </div>
         <div className="rounded-lg border border-dashed p-8 text-center">
           <ShoppingBag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">Geen actieve trips.</p>
+          <p className="text-muted-foreground">Geen trips gevonden.</p>
           <Link href="/trip/new">
             <Button variant="link">Maak een nieuwe trip</Button>
           </Link>
@@ -174,7 +273,7 @@ export default function ShoppingPage() {
     );
   }
 
-  if (aggregatedItems.length === 0) {
+  if (shoppingItems.length === 0) {
     return (
       <div className="mx-auto max-w-lg px-4 pt-6">
         <div className="mb-6">
@@ -183,12 +282,37 @@ export default function ShoppingPage() {
             Shopping
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {activeTrips.length} actieve trip{activeTrips.length !== 1 ? 's' : ''}
+            {visibleTrips.length} trip{visibleTrips.length !== 1 ? 's' : ''}
           </p>
         </div>
+
+        {/* Active toggle */}
+        <div className="mb-4">
+          <button
+            onClick={() => setActiveOnly(!activeOnly)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+              activeOnly
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border text-muted-foreground hover:border-primary/50'
+            )}
+          >
+            {activeOnly ? (
+              <ToggleRight className="h-3.5 w-3.5" />
+            ) : (
+              <ToggleLeft className="h-3.5 w-3.5" />
+            )}
+            {activeOnly ? 'Alleen actieve trips' : 'Alle trips'}
+          </button>
+        </div>
+
         <div className="rounded-lg border border-dashed p-8 text-center">
           <ShoppingBag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">Geen shopping items in je actieve trips.</p>
+          <p className="text-muted-foreground">
+            {activeOnly
+              ? 'Geen shopping items in je actieve trips.'
+              : 'Geen shopping items gevonden.'}
+          </p>
         </div>
       </div>
     );
@@ -203,7 +327,8 @@ export default function ShoppingPage() {
           Shopping
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {activeTrips.length} actieve trip{activeTrips.length !== 1 ? 's' : ''}
+          {visibleTrips.length} trip{visibleTrips.length !== 1 ? 's' : ''}
+          {activeOnly && ` (${activeCount} actief)`}
         </p>
       </div>
 
@@ -220,6 +345,59 @@ export default function ShoppingPage() {
         <div className="rounded-lg border p-3 text-center">
           <p className="text-2xl font-bold text-green-600">{totalPacked}</p>
           <p className="text-xs text-muted-foreground">Ingepakt</p>
+        </div>
+      </div>
+
+      {/* View toggles row */}
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        {/* Active/All toggle */}
+        <button
+          onClick={() => setActiveOnly(!activeOnly)}
+          className={cn(
+            'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+            activeOnly
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-border text-muted-foreground hover:border-primary/50'
+          )}
+        >
+          {activeOnly ? (
+            <ToggleRight className="h-3.5 w-3.5" />
+          ) : (
+            <ToggleLeft className="h-3.5 w-3.5" />
+          )}
+          {activeOnly ? 'Actieve trips' : 'Alle trips'}
+        </button>
+
+        <div className="flex-1" />
+
+        {/* View mode toggle */}
+        <div className="flex rounded-full border overflow-hidden">
+          <button
+            onClick={() => setViewMode('aggregated')}
+            className={cn(
+              'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors',
+              viewMode === 'aggregated'
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted'
+            )}
+            title="Alle items"
+          >
+            <List className="h-3.5 w-3.5" />
+            Lijst
+          </button>
+          <button
+            onClick={() => setViewMode('per-trip')}
+            className={cn(
+              'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors border-l',
+              viewMode === 'per-trip'
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted'
+            )}
+            title="Per trip"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            Per trip
+          </button>
         </div>
       </div>
 
@@ -266,26 +444,89 @@ export default function ShoppingPage() {
         )}
       </div>
 
-      {/* Items list */}
-      <div className="rounded-lg border divide-y mb-4">
-        {filteredItems.map((agg) => (
-          <ShoppingItemRow
-            key={agg.name.toLowerCase().trim()}
-            item={agg}
-            onTogglePurchased={() => handleTogglePurchased(agg)}
-            onTogglePacked={() => handleTogglePacked(agg)}
-          />
-        ))}
-      </div>
+      {/* Aggregated view */}
+      {viewMode === 'aggregated' && (
+        <>
+          <div className="rounded-lg border divide-y mb-4">
+            {filteredItems.map((agg) => (
+              <ShoppingItemRow
+                key={agg.name.toLowerCase().trim()}
+                item={agg}
+                onTogglePurchased={() => handleTogglePurchased(agg)}
+                onTogglePacked={() => handleTogglePacked(agg)}
+              />
+            ))}
+          </div>
 
-      {filteredItems.length === 0 && (
-        <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
-          {filter === 'todo'
-            ? 'Alles is gedaan! 🎉'
-            : filter === 'purchased'
-            ? 'Nog niets gekocht'
-            : 'Geen items gevonden'}
-        </div>
+          {filteredItems.length === 0 && (
+            <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+              {filter === 'todo'
+                ? 'Alles is gedaan! 🎉'
+                : filter === 'purchased'
+                ? 'Nog niets gekocht'
+                : 'Geen items gevonden'}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Per-trip view */}
+      {viewMode === 'per-trip' && (
+        <>
+          <div className="space-y-2 mb-4">
+            {filteredTripGroups.map((group) => {
+              const isCollapsed = collapsedTrips.has(group.trip.id);
+              const statusBadge = group.trip.status === 'completed' ? ' (afgerond)' : '';
+
+              return (
+                <div key={group.trip.id} className="rounded-lg border">
+                  <button
+                    onClick={() => toggleCollapsedTrip(group.trip.id)}
+                    className="flex w-full items-center gap-2 p-3 text-left"
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+                    <span className="flex-1 font-medium text-sm truncate">
+                      {group.trip.name}
+                      {statusBadge && (
+                        <span className="text-muted-foreground font-normal">{statusBadge}</span>
+                      )}
+                    </span>
+                    <Badge variant="secondary" className="text-xs shrink-0">
+                      {group.items.filter((i) => i.checked).length}/{group.items.length}
+                    </Badge>
+                  </button>
+
+                  {!isCollapsed && (
+                    <div className="border-t divide-y">
+                      {group.items.map((item) => (
+                        <SingleItemRow
+                          key={item.id}
+                          item={item}
+                          onTogglePurchased={() => togglePurchased(item.id)}
+                          onTogglePacked={() => toggleTripItem(item.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {filteredTripGroups.length === 0 && (
+            <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+              {filter === 'todo'
+                ? 'Alles is gedaan! 🎉'
+                : filter === 'purchased'
+                ? 'Nog niets gekocht'
+                : 'Geen items gevonden'}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -370,11 +611,9 @@ function ShoppingItemRow({
               </Badge>
             )}
           </div>
-          {item.tripNames.length > 1 && (
-            <p className="text-[11px] text-muted-foreground truncate">
-              {item.tripNames.join(', ')}
-            </p>
-          )}
+          <p className="text-[11px] text-muted-foreground truncate">
+            {item.tripNames.join(', ')}
+          </p>
         </div>
 
         {/* Step 2: Pack toggle (only visible if purchased) */}
@@ -405,6 +644,86 @@ function ShoppingItemRow({
           )}
         >
           {item.allPacked ? 'Ingepakt' : item.allPurchased ? 'Gekocht' : 'Te kopen'}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
+function SingleItemRow({
+  item,
+  onTogglePurchased,
+  onTogglePacked,
+}: {
+  item: TripItem;
+  onTogglePurchased: () => void;
+  onTogglePacked: () => void;
+}) {
+  const qty = item.quantity ?? 1;
+  const isPurchased = !!item.purchased;
+  const isPacked = item.checked;
+
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        {/* Step 1: Purchase toggle */}
+        <button
+          onClick={onTogglePurchased}
+          className="shrink-0"
+          title={isPurchased ? 'Markeer als niet gekocht' : 'Markeer als gekocht'}
+        >
+          {isPurchased ? (
+            <ShoppingBag className="h-5 w-5 text-blue-600" />
+          ) : (
+            <Circle className="h-5 w-5 text-muted-foreground" />
+          )}
+        </button>
+
+        {/* Item info */}
+        <div className="flex-1 min-w-0">
+          <span
+            className={cn(
+              'text-sm',
+              isPacked && 'line-through text-muted-foreground'
+            )}
+          >
+            {item.name}
+          </span>
+          {qty > 1 && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1.5 shrink-0">
+              ×{qty}
+            </Badge>
+          )}
+        </div>
+
+        {/* Step 2: Pack toggle (only visible if purchased) */}
+        {isPurchased && (
+          <button
+            onClick={onTogglePacked}
+            className="shrink-0"
+            title={isPacked ? 'Markeer als niet ingepakt' : 'Markeer als ingepakt'}
+          >
+            {isPacked ? (
+              <PackageCheck className="h-5 w-5 text-green-600" />
+            ) : (
+              <Package className="h-5 w-5 text-blue-400" />
+            )}
+          </button>
+        )}
+
+        {/* Status badge */}
+        <Badge
+          variant="outline"
+          className={cn(
+            'text-[10px] shrink-0',
+            isPacked
+              ? 'border-green-200 text-green-700 bg-green-50 dark:border-green-800 dark:text-green-300 dark:bg-green-950'
+              : isPurchased
+              ? 'border-blue-200 text-blue-700 bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:bg-blue-950'
+              : ''
+          )}
+        >
+          {isPacked ? 'Ingepakt' : isPurchased ? 'Gekocht' : 'Te kopen'}
         </Badge>
       </div>
     </div>
