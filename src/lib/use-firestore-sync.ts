@@ -69,43 +69,76 @@ export function useFirestoreSync(user: User | null) {
     []
   );
 
-  // Refresh group data (shared trips + master data) — called on visibility change
-  const refreshGroupData = useCallback(
+  // Refresh all data when app becomes visible — prevents stale data from
+  // overwriting Firestore when multiple browsers/devices or group members
+  // have the app open simultaneously.
+  const refreshOnVisibility = useCallback(
     async (uid: string) => {
-      const state = useAppStore.getState();
-      const group = state.currentGroup;
-      if (!group) return;
+      if (isSyncingRef.current) return;
 
+      // Wait for any pending writes to finish
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+        // Flush the pending sync before downloading
+        await syncToFirestore(uid);
+      }
+
+      isSyncingRef.current = true;
       try {
-        // Re-fetch group doc (members may have changed)
-        const freshGroup = await fetchGroup(group.id);
-        if (!freshGroup) return;
+        const state = useAppStore.getState();
+        const group = state.currentGroup;
 
-        // Re-fetch group master data
-        const groupData = await downloadGroupMasterData(group.id);
+        if (group) {
+          // Group mode: refresh group master data + own trips + shared trips
+          const [freshGroup, groupData, personalData] = await Promise.all([
+            fetchGroup(group.id),
+            downloadGroupMasterData(group.id),
+            downloadFromFirestore(uid),
+          ]);
 
-        // Re-fetch shared trips
-        const otherUids = Object.keys(freshGroup.members).filter((id) => id !== uid);
-        const shared = otherUids.length > 0
-          ? await fetchSharedTrips(group.id, uid, otherUids)
-          : { trips: [], tripItems: [] };
+          if (!freshGroup) {
+            isSyncingRef.current = false;
+            return;
+          }
 
-        isSyncingRef.current = true;
-        useAppStore.setState({
-          currentGroup: freshGroup,
-          categories: migrateCategories(groupData.categories),
-          masterItems: groupData.masterItems,
-          customActivities: groupData.customActivities,
-          sharedTrips: shared.trips,
-          sharedTripItems: shared.tripItems,
-        });
+          const otherUids = Object.keys(freshGroup.members).filter((id) => id !== uid);
+          const shared = otherUids.length > 0
+            ? await fetchSharedTrips(group.id, uid, otherUids)
+            : { trips: [], tripItems: [] };
+
+          useAppStore.setState({
+            currentGroup: freshGroup,
+            categories: migrateCategories(groupData.categories),
+            masterItems: groupData.masterItems,
+            customActivities: groupData.customActivities,
+            trips: personalData?.trips ?? state.trips,
+            tripItems: personalData?.tripItems ?? state.tripItems,
+            sharedTrips: shared.trips,
+            sharedTripItems: shared.tripItems,
+          });
+        } else {
+          // Personal mode: refresh everything from Firestore
+          const firestoreData = await downloadFromFirestore(uid);
+          if (firestoreData) {
+            useAppStore.setState({
+              categories: migrateCategories(firestoreData.categories),
+              masterItems: firestoreData.masterItems,
+              customActivities: firestoreData.customActivities ?? [],
+              trips: firestoreData.trips,
+              tripItems: firestoreData.tripItems,
+            });
+          }
+        }
+
         prevHashRef.current = hashState(useAppStore.getState());
-        isSyncingRef.current = false;
       } catch (error) {
-        console.error('Group refresh failed:', error);
+        console.error('Visibility refresh failed:', error);
+      } finally {
+        isSyncingRef.current = false;
       }
     },
-    []
+    [syncToFirestore]
   );
 
   // On sign-in: download or migrate
@@ -242,19 +275,20 @@ export function useFirestoreSync(user: User | null) {
     };
   }, [user, syncToFirestore]);
 
-  // Refresh group data when app becomes visible (tab/PWA focus)
+  // Re-download from Firestore when app becomes visible (tab/PWA focus)
+  // This ensures changes from other browsers/devices/group members are picked up
   useEffect(() => {
     if (!user) return;
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        refreshGroupData(user.uid);
+        refreshOnVisibility(user.uid);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [user, refreshGroupData]);
+  }, [user, refreshOnVisibility]);
 
   // Real-time listener on group document — detect new members instantly
   useEffect(() => {
@@ -303,18 +337,20 @@ export function useFirestoreSync(user: User | null) {
 }
 
 function hashState(state: {
-  categories: { id: string; sortOrder: number }[];
-  masterItems: { id: string; name: string }[];
+  categories: { id: string; name: string; sortOrder: number }[];
+  masterItems: { id: string; name: string; categoryId: string }[];
   customActivities: { id: string; name: string }[];
-  trips: { id: string; status: string }[];
-  tripItems: { id: string; checked: boolean; purchased?: boolean; quantity?: number; sortOrder?: number }[];
+  trips: { id: string; name: string; status: string; destination: string; startDate: string; endDate: string; temperature: string; duration: string; peopleCount: number; activities: string[]; notes?: string; groupId?: string; sharedWith?: string[] }[];
+  tripItems: { id: string; name: string; checked: boolean; purchased?: boolean; quantity?: number; sortOrder?: number; notes?: string; categoryId: string }[];
 }): string {
-  const c = state.categories.map((x) => `${x.id}:${x.sortOrder}`).join(',');
-  const m = state.masterItems.map((x) => `${x.id}:${x.name}`).join(',');
+  const c = state.categories.map((x) => `${x.id}:${x.name}:${x.sortOrder}`).join(',');
+  const m = state.masterItems.map((x) => `${x.id}:${x.name}:${x.categoryId}`).join(',');
   const ca = state.customActivities.map((x) => `${x.id}:${x.name}`).join(',');
-  const t = state.trips.map((x) => `${x.id}:${x.status}`).join(',');
+  const t = state.trips
+    .map((x) => `${x.id}:${x.name}:${x.status}:${x.destination}:${x.startDate}:${x.endDate}:${x.temperature}:${x.duration}:${x.peopleCount}:${x.activities.join('+')}:${x.notes ?? ''}:${x.groupId ?? ''}:${(x.sharedWith ?? []).join('+')}`)
+    .join(',');
   const ti = state.tripItems
-    .map((x) => `${x.id}:${x.checked ? 1 : 0}:${x.purchased ? 1 : 0}:${x.quantity ?? 1}:${x.sortOrder ?? 0}`)
+    .map((x) => `${x.id}:${x.name}:${x.checked ? 1 : 0}:${x.purchased ? 1 : 0}:${x.quantity ?? 1}:${x.sortOrder ?? 0}:${x.notes ?? ''}:${x.categoryId}`)
     .join(',');
   return `${c}|${m}|${ca}|${t}|${ti}`;
 }
