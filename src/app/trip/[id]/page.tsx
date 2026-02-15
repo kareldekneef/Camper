@@ -747,7 +747,7 @@ function ItemRow({
   const swipeProgress = Math.min(swipeX / swipeThreshold, 1);
 
   return (
-    <div className="border-b last:border-b-0 relative overflow-hidden">
+    <div className={cn("border-b last:border-b-0 relative", !showActions && "overflow-hidden")}>
       {/* Swipe reveal background */}
       <div
         className={cn(

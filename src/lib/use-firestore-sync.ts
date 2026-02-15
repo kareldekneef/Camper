@@ -19,6 +19,16 @@ import {
   downloadPersonalMasterData,
   fetchSharedTrips,
 } from './group-sync';
+import { Category } from './types';
+
+// Migrate category names from Firestore (e.g. "Shopping / Voorbereiding" → "Shopping")
+function migrateCategories(categories: Category[]): Category[] {
+  return categories.map((c) =>
+    c.name.toLowerCase().includes('voorbereiding')
+      ? { ...c, name: 'Shopping' }
+      : c
+  );
+}
 
 export function useFirestoreSync(user: User | null) {
   const isSyncingRef = useRef(false);
@@ -81,7 +91,7 @@ export function useFirestoreSync(user: User | null) {
         isSyncingRef.current = true;
         useAppStore.setState({
           currentGroup: freshGroup,
-          categories: groupData.categories,
+          categories: migrateCategories(groupData.categories),
           masterItems: groupData.masterItems,
           sharedTrips: shared.trips,
           sharedTripItems: shared.tripItems,
@@ -140,7 +150,7 @@ export function useFirestoreSync(user: User | null) {
 
             useAppStore.setState({
               currentGroup: group,
-              categories: groupMasterData.categories,
+              categories: migrateCategories(groupMasterData.categories),
               masterItems: groupMasterData.masterItems,
               trips: personalData?.trips ?? [],
               tripItems: personalData?.tripItems ?? [],
@@ -171,7 +181,7 @@ export function useFirestoreSync(user: User | null) {
             await uploadAllToFirestore(user!.uid);
           } else {
             useAppStore.setState({
-              categories: firestoreData.categories,
+              categories: migrateCategories(firestoreData.categories),
               masterItems: firestoreData.masterItems,
               trips: firestoreData.trips,
               tripItems: firestoreData.tripItems,
