@@ -69,19 +69,20 @@ export function useFirestoreSync(user: User | null) {
     []
   );
 
-  // Refresh all data when app becomes visible — prevents stale data from
-  // overwriting Firestore when multiple browsers/devices or group members
-  // have the app open simultaneously.
+  // Refresh all data when app becomes visible — downloads fresh data from
+  // Firestore to pick up changes made in other browsers/devices/group members.
+  // CRITICAL: We cancel (not flush) any pending stale writes to avoid
+  // overwriting Firestore with outdated local state.
   const refreshOnVisibility = useCallback(
     async (uid: string) => {
       if (isSyncingRef.current) return;
 
-      // Wait for any pending writes to finish
+      // Cancel any pending stale writes — do NOT flush them.
+      // The fresh download will replace local state, making any
+      // pending write based on old state incorrect.
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
-        // Flush the pending sync before downloading
-        await syncToFirestore(uid);
       }
 
       isSyncingRef.current = true;
@@ -97,10 +98,7 @@ export function useFirestoreSync(user: User | null) {
             downloadFromFirestore(uid),
           ]);
 
-          if (!freshGroup) {
-            isSyncingRef.current = false;
-            return;
-          }
+          if (!freshGroup) return;
 
           const otherUids = Object.keys(freshGroup.members).filter((id) => id !== uid);
           const shared = otherUids.length > 0
@@ -138,7 +136,7 @@ export function useFirestoreSync(user: User | null) {
         isSyncingRef.current = false;
       }
     },
-    [syncToFirestore]
+    []
   );
 
   // On sign-in: download or migrate
