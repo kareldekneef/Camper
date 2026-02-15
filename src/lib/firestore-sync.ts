@@ -11,6 +11,17 @@ import { Category, CustomActivity, MasterItem, Trip, TripItem } from './types';
 
 type CollectionName = 'categories' | 'masterItems' | 'trips' | 'tripItems' | 'customActivities';
 
+// Firestore rejects `undefined` values in documents. Strip them before writing.
+function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
 // --- Upload all local data to Firestore (initial migration) ---
 
 export async function uploadAllToFirestore(uid: string): Promise<void> {
@@ -23,7 +34,7 @@ export async function uploadAllToFirestore(uid: string): Promise<void> {
     for (const item of items) {
       allOps.push({
         ref: doc(db, 'users', uid, collectionName, item.id),
-        data: item as unknown as Record<string, unknown>,
+        data: stripUndefined(item as unknown as Record<string, unknown>),
       });
     }
   };
@@ -100,7 +111,7 @@ export async function syncCollectionToFirestore<T extends { id: string }>(
     allOps.push({
       type: 'set',
       ref: doc(db, 'users', uid, collectionName, item.id),
-      data: item as unknown as Record<string, unknown>,
+      data: stripUndefined(item as unknown as Record<string, unknown>),
     });
   }
 
@@ -146,7 +157,7 @@ export async function syncGroupCollection<T extends { id: string }>(
     allOps.push({
       type: 'set',
       ref: doc(db, 'groups', groupId, collectionName, item.id),
-      data: item as unknown as Record<string, unknown>,
+      data: stripUndefined(item as unknown as Record<string, unknown>),
     });
   }
 
