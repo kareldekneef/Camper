@@ -747,7 +747,7 @@ function ItemRow({
   const swipeProgress = Math.min(swipeX / swipeThreshold, 1);
 
   return (
-    <div className={cn("border-b last:border-b-0 relative", !showActions && "overflow-hidden")}>
+    <div className={cn("border-b last:border-b-0 relative", !showActions && "overflow-hidden")} style={showActions ? { zIndex: 30 } : undefined}>
       {/* Swipe reveal background */}
       <div
         className={cn(
@@ -770,8 +770,8 @@ function ItemRow({
       <div
         className="flex items-center gap-1 px-2 py-2.5 bg-background relative"
         style={{
-          transform: `translateX(${swipeX}px)`,
-          transition: swiping ? 'none' : 'transform 200ms ease-out',
+          transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined,
+          transition: swipeX > 0 || swiping ? (swiping ? 'none' : 'transform 200ms ease-out') : undefined,
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
