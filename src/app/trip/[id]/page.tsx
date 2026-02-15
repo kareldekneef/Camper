@@ -117,7 +117,7 @@ export default function TripDetailPage({
 
   // Shopping category ID
   const shoppingCategoryId = categories.find(
-    (c) => c.name.toLowerCase().includes('shopping')
+    (c) => c.id === 'cat-shopping' || c.name.toLowerCase().includes('shopping')
   )?.id;
 
   // Apply filter mode
@@ -815,7 +815,7 @@ function ItemRow({
             </Badge>
           )}
         </button>
-        <div className="relative">
+        <div className="relative" onTouchStart={(e) => e.stopPropagation()}>
           <button
             onClick={() => setShowActions(!showActions)}
             className="p-1 text-muted-foreground hover:text-foreground"

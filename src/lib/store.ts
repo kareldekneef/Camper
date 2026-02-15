@@ -455,7 +455,7 @@ export const useAppStore = create<AppState>()(
 
         // Find the shopping category
         const shoppingCat = state.categories.find(
-          (c) => c.name.toLowerCase().includes('shopping')
+          (c) => c.id === 'cat-shopping' || c.name.toLowerCase().includes('shopping')
         );
         if (!shoppingCat) return;
 
