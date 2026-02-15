@@ -53,11 +53,12 @@ export default function SettingsPage() {
       state: {
         categories: state.categories,
         masterItems: state.masterItems,
+        customActivities: state.customActivities,
         trips: state.trips,
         tripItems: state.tripItems,
         initialized: state.initialized,
       },
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -80,12 +81,13 @@ export default function SettingsPage() {
       reader.onload = (ev) => {
         try {
           const raw = JSON.parse(ev.target?.result as string);
-          // Support both v1 (raw localStorage) and v2 (structured) formats
-          const data = raw.version === 2 ? raw.state : raw.state || raw;
+          // Support v1 (raw localStorage), v2 and v3 (structured) formats
+          const data = (raw.version === 2 || raw.version === 3) ? raw.state : raw.state || raw;
           if (data.categories && data.masterItems) {
             useAppStore.setState({
               categories: data.categories,
               masterItems: data.masterItems,
+              customActivities: data.customActivities || [],
               trips: data.trips || [],
               tripItems: data.tripItems || [],
             });
@@ -107,6 +109,7 @@ export default function SettingsPage() {
     useAppStore.setState({
       categories: defaultCategories,
       masterItems: defaultMasterItems,
+      customActivities: [],
     });
     setShowResetConfirm(false);
   };

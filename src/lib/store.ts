@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { v4 as uuid } from 'uuid';
 import {
   Category,
+  CustomActivity,
   MasterItem,
   Trip,
   TripItem,
@@ -18,6 +19,7 @@ interface AppState {
   masterItems: MasterItem[];
   trips: Trip[];
   tripItems: TripItem[];
+  customActivities: CustomActivity[];
   initialized: boolean;
 
   // Shared trips notification tracking (persisted)
@@ -45,6 +47,11 @@ interface AppState {
   deleteMasterItem: (id: string) => void;
   reorderMasterItems: (categoryId: string, orderedIds: string[]) => void;
 
+  // Custom Activities
+  addCustomActivity: (name: string, icon: string) => void;
+  updateCustomActivity: (id: string, name: string, icon: string) => void;
+  deleteCustomActivity: (id: string) => void;
+
   // Trips
   createTrip: (params: {
     name: string;
@@ -61,6 +68,10 @@ interface AppState {
   updateTrip: (id: string, updates: Partial<Trip>) => void;
   deleteTrip: (id: string) => void;
   copyTrip: (tripId: string, newName: string) => string;
+  regenerateTripItems: (
+    tripId: string,
+    newParams: { temperature: Temperature; duration: Duration; peopleCount: number; activities: Activity[] }
+  ) => { added: number; removed: number };
 
   // Groups
   setCurrentGroup: (group: Group | null) => void;
@@ -83,7 +94,7 @@ interface AppState {
   copyItemToShopping: (itemId: string) => void;
 }
 
-function shouldIncludeItem(
+export function shouldIncludeItem(
   item: MasterItem,
   temperature: Temperature,
   duration: Duration,
@@ -115,7 +126,7 @@ function shouldIncludeItem(
   return true;
 }
 
-function calculateQuantity(
+export function calculateQuantity(
   masterItem: MasterItem,
   peopleCount: number
 ): number {
@@ -130,6 +141,7 @@ export const useAppStore = create<AppState>()(
       masterItems: [],
       trips: [],
       tripItems: [],
+      customActivities: [],
       initialized: false,
       seenSharedTripIds: [],
       currentGroup: null,
@@ -220,6 +232,41 @@ export const useAppStore = create<AppState>()(
             if (item.categoryId !== categoryId) return item;
             const index = orderedIds.indexOf(item.id);
             return index >= 0 ? { ...item, sortOrder: index } : item;
+          }),
+        });
+      },
+
+      // Custom Activities
+      addCustomActivity: (name, icon) => {
+        set({
+          customActivities: [
+            ...get().customActivities,
+            { id: `custom_${uuid()}`, name, icon },
+          ],
+        });
+      },
+
+      updateCustomActivity: (id, name, icon) => {
+        set({
+          customActivities: get().customActivities.map((ca) =>
+            ca.id === id ? { ...ca, name, icon } : ca
+          ),
+        });
+      },
+
+      deleteCustomActivity: (id) => {
+        // Also remove from all master item conditions
+        set({
+          customActivities: get().customActivities.filter((ca) => ca.id !== id),
+          masterItems: get().masterItems.map((mi) => {
+            if (!mi.conditions.activities?.includes(id)) return mi;
+            return {
+              ...mi,
+              conditions: {
+                ...mi.conditions,
+                activities: mi.conditions.activities.filter((a) => a !== id),
+              },
+            };
           }),
         });
       },
@@ -321,6 +368,80 @@ export const useAppStore = create<AppState>()(
         });
 
         return newTripId;
+      },
+
+      regenerateTripItems: (tripId, newParams) => {
+        const state = get();
+        const currentTripItems = state.tripItems.filter((ti) => ti.tripId === tripId);
+
+        // Determine which master items should be included with the new params
+        const newMatchingMasterIds = new Set(
+          state.masterItems
+            .filter((mi) =>
+              shouldIncludeItem(mi, newParams.temperature, newParams.duration, newParams.peopleCount, newParams.activities)
+            )
+            .map((mi) => mi.id)
+        );
+
+        // Existing master-derived items in this trip (keyed by masterItemId)
+        const existingMasterItemIds = new Set(
+          currentTripItems
+            .filter((ti) => ti.masterItemId && !ti.isCustom)
+            .map((ti) => ti.masterItemId!)
+        );
+
+        // Items to ADD: master items that match new params but aren't in the trip yet
+        const masterItemsToAdd = state.masterItems.filter(
+          (mi) => newMatchingMasterIds.has(mi.id) && !existingMasterItemIds.has(mi.id)
+        );
+
+        // Items to REMOVE: unchecked master-derived items that no longer match
+        const itemIdsToRemove = new Set(
+          currentTripItems
+            .filter(
+              (ti) =>
+                ti.masterItemId &&
+                !ti.isCustom &&
+                !ti.checked &&
+                !newMatchingMasterIds.has(ti.masterItemId)
+            )
+            .map((ti) => ti.id)
+        );
+
+        // Find max sortOrder per category for new items
+        const maxSortOrders = new Map<string, number>();
+        for (const ti of currentTripItems) {
+          if (itemIdsToRemove.has(ti.id)) continue;
+          const current = maxSortOrders.get(ti.categoryId) ?? -1;
+          maxSortOrders.set(ti.categoryId, Math.max(current, ti.sortOrder ?? 0));
+        }
+
+        const newTripItems: TripItem[] = masterItemsToAdd.map((mi) => {
+          const currentMax = maxSortOrders.get(mi.categoryId) ?? -1;
+          const newOrder = currentMax + 1;
+          maxSortOrders.set(mi.categoryId, newOrder);
+          return {
+            id: uuid(),
+            tripId,
+            masterItemId: mi.id,
+            name: mi.name,
+            categoryId: mi.categoryId,
+            checked: false,
+            isCustom: false,
+            quantity: calculateQuantity(mi, newParams.peopleCount),
+            sortOrder: newOrder,
+          };
+        });
+
+        // Apply changes
+        const updatedTripItems = [
+          ...state.tripItems.filter((ti) => !itemIdsToRemove.has(ti.id)),
+          ...newTripItems,
+        ];
+
+        set({ tripItems: updatedTripItems });
+
+        return { added: newTripItems.length, removed: itemIdsToRemove.size };
       },
 
       // Groups
@@ -521,7 +642,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'camperpack-storage',
-      version: 1,
+      version: 2,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -535,6 +656,34 @@ export const useAppStore = create<AppState>()(
             );
           }
         }
+        if (version < 2) {
+          // Add customActivities if missing
+          if (!state.customActivities) {
+            state.customActivities = [];
+          }
+          // Remove 'surfing' from master item conditions
+          const masterItems = state.masterItems as MasterItem[] | undefined;
+          if (masterItems) {
+            state.masterItems = masterItems.map((mi) => {
+              if (!mi.conditions.activities?.includes('surfing')) return mi;
+              return {
+                ...mi,
+                conditions: {
+                  ...mi.conditions,
+                  activities: mi.conditions.activities.filter((a) => a !== 'surfing'),
+                },
+              };
+            });
+          }
+          // Remove 'surfing' from trip activities
+          const trips = state.trips as Trip[] | undefined;
+          if (trips) {
+            state.trips = trips.map((t) => ({
+              ...t,
+              activities: t.activities.filter((a) => a !== 'surfing'),
+            }));
+          }
+        }
         return state;
       },
       partialize: (state) => ({
@@ -542,6 +691,7 @@ export const useAppStore = create<AppState>()(
         masterItems: state.masterItems,
         trips: state.trips,
         tripItems: state.tripItems,
+        customActivities: state.customActivities,
         initialized: state.initialized,
         seenSharedTripIds: state.seenSharedTripIds,
         // Excluded from localStorage (fetched from Firestore):

@@ -48,6 +48,7 @@ export function useFirestoreSync(user: User | null) {
           await Promise.all([
             syncGroupCollection(group.id, 'categories', state.categories),
             syncGroupCollection(group.id, 'masterItems', state.masterItems),
+            syncGroupCollection(group.id, 'customActivities', state.customActivities),
             syncCollectionToFirestore(uid, 'trips', state.trips),
             syncCollectionToFirestore(uid, 'tripItems', state.tripItems),
           ]);
@@ -56,6 +57,7 @@ export function useFirestoreSync(user: User | null) {
           await Promise.all([
             syncCollectionToFirestore(uid, 'categories', state.categories),
             syncCollectionToFirestore(uid, 'masterItems', state.masterItems),
+            syncCollectionToFirestore(uid, 'customActivities', state.customActivities),
             syncCollectionToFirestore(uid, 'trips', state.trips),
             syncCollectionToFirestore(uid, 'tripItems', state.tripItems),
           ]);
@@ -93,6 +95,7 @@ export function useFirestoreSync(user: User | null) {
           currentGroup: freshGroup,
           categories: migrateCategories(groupData.categories),
           masterItems: groupData.masterItems,
+          customActivities: groupData.customActivities,
           sharedTrips: shared.trips,
           sharedTripItems: shared.tripItems,
         });
@@ -152,6 +155,7 @@ export function useFirestoreSync(user: User | null) {
               currentGroup: group,
               categories: migrateCategories(groupMasterData.categories),
               masterItems: groupMasterData.masterItems,
+              customActivities: groupMasterData.customActivities,
               trips: personalData?.trips ?? [],
               tripItems: personalData?.tripItems ?? [],
               personalBackupItems: backupItems,
@@ -183,6 +187,7 @@ export function useFirestoreSync(user: User | null) {
             useAppStore.setState({
               categories: migrateCategories(firestoreData.categories),
               masterItems: firestoreData.masterItems,
+              customActivities: firestoreData.customActivities ?? [],
               trips: firestoreData.trips,
               tripItems: firestoreData.tripItems,
               currentGroup: null,
@@ -300,14 +305,16 @@ export function useFirestoreSync(user: User | null) {
 function hashState(state: {
   categories: { id: string; sortOrder: number }[];
   masterItems: { id: string; name: string }[];
+  customActivities: { id: string; name: string }[];
   trips: { id: string; status: string }[];
   tripItems: { id: string; checked: boolean; purchased?: boolean; quantity?: number; sortOrder?: number }[];
 }): string {
   const c = state.categories.map((x) => `${x.id}:${x.sortOrder}`).join(',');
   const m = state.masterItems.map((x) => `${x.id}:${x.name}`).join(',');
+  const ca = state.customActivities.map((x) => `${x.id}:${x.name}`).join(',');
   const t = state.trips.map((x) => `${x.id}:${x.status}`).join(',');
   const ti = state.tripItems
     .map((x) => `${x.id}:${x.checked ? 1 : 0}:${x.purchased ? 1 : 0}:${x.quantity ?? 1}:${x.sortOrder ?? 0}`)
     .join(',');
-  return `${c}|${m}|${t}|${ti}`;
+  return `${c}|${m}|${ca}|${t}|${ti}`;
 }

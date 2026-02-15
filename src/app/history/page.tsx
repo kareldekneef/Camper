@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { ArrowLeft, MapPin, Calendar, TrendingUp, AlertTriangle, CheckCircle2, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { temperatureIcons, activityLabels } from '@/lib/constants';
+import { temperatureIcons } from '@/lib/constants';
 import { Trip, TripItem } from '@/lib/types';
 
 interface TripStats {

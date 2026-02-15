@@ -32,15 +32,17 @@ import {
   FolderPlus,
   Users,
   UsersRound,
+  Zap,
 } from 'lucide-react';
 import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
 import { cn } from '@/lib/utils';
 import { MasterItem, Temperature, Activity } from '@/lib/types';
-import { temperatureLabels, activityLabels } from '@/lib/constants';
+import { temperatureLabels, getAllActivities, getActivityLabel } from '@/lib/constants';
 
 export default function MasterListPage() {
   const categories = useAppStore((s) => s.categories);
   const masterItems = useAppStore((s) => s.masterItems);
+  const customActivities = useAppStore((s) => s.customActivities);
   const addMasterItem = useAppStore((s) => s.addMasterItem);
   const updateMasterItem = useAppStore((s) => s.updateMasterItem);
   const deleteMasterItem = useAppStore((s) => s.deleteMasterItem);
@@ -52,13 +54,18 @@ export default function MasterListPage() {
   const currentGroup = useAppStore((s) => s.currentGroup);
   const personalBackupItems = useAppStore((s) => s.personalBackupItems);
   const addPersonalItemToGroup = useAppStore((s) => s.addPersonalItemToGroup);
+  const addCustomActivity = useAppStore((s) => s.addCustomActivity);
+  const updateCustomActivity = useAppStore((s) => s.updateCustomActivity);
+  const deleteCustomActivity = useAppStore((s) => s.deleteCustomActivity);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
+  const [showActivityManager, setShowActivityManager] = useState(false);
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
   const [editingCategory, setEditingCategory] = useState<{ id: string; name: string; icon: string } | null>(null);
+  const [editingActivity, setEditingActivity] = useState<{ id: string; name: string; icon: string } | null>(null);
 
   // Add item form state
   const [newItemName, setNewItemName] = useState('');
@@ -72,6 +79,12 @@ export default function MasterListPage() {
   // Add category form state
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('📦');
+
+  // Add custom activity form state
+  const [newActivityName, setNewActivityName] = useState('');
+  const [newActivityIcon, setNewActivityIcon] = useState('🎯');
+
+  const allActivities = getAllActivities(customActivities);
 
   const toggleCategory = (categoryId: string) => {
     setCollapsedCategories((prev) => {
@@ -156,6 +169,13 @@ export default function MasterListPage() {
     setShowAddCategory(false);
   };
 
+  const handleAddCustomActivity = () => {
+    if (!newActivityName.trim()) return;
+    addCustomActivity(newActivityName.trim(), newActivityIcon);
+    setNewActivityName('');
+    setNewActivityIcon('🎯');
+  };
+
   // Handle category reordering
   const categoryIds = sortedCategories.map((c) => c.id);
   const handleReorderCategories = (orderedIds: string[]) => {
@@ -187,7 +207,7 @@ export default function MasterListPage() {
         </p>
       </div>
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex gap-2 flex-wrap">
         <Dialog open={showAddItem} onOpenChange={(open) => { setShowAddItem(open); if (!open) resetItemForm(); }}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-1">
@@ -292,23 +312,23 @@ export default function MasterListPage() {
               <div className="space-y-2">
                 <Label>Activiteiten (optioneel)</Label>
                 <div className="flex flex-wrap gap-2">
-                  {(Object.keys(activityLabels) as Activity[]).map((a) => (
+                  {allActivities.map((a) => (
                     <button
-                      key={a}
+                      key={a.id}
                       type="button"
                       onClick={() =>
                         setNewItemActivities((prev) =>
-                          prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]
+                          prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id]
                         )
                       }
                       className={cn(
                         'rounded-md border px-3 py-1 text-xs transition-colors',
-                        newItemActivities.includes(a)
+                        newItemActivities.includes(a.id)
                           ? 'border-primary bg-primary/10'
                           : 'border-border'
                       )}
                     >
-                      {activityLabels[a]}
+                      {a.icon} {a.label}
                     </button>
                   ))}
                 </div>
@@ -362,6 +382,95 @@ export default function MasterListPage() {
               <Button onClick={handleAddCategory} className="w-full" disabled={!newCatName.trim()}>
                 Toevoegen
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showActivityManager} onOpenChange={setShowActivityManager}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" className="gap-1">
+              <Zap className="h-4 w-4" />
+              Activiteit
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Activiteiten beheren</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Built-in activities (read-only) */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Standaard activiteiten</Label>
+                <div className="flex flex-wrap gap-2">
+                  {allActivities
+                    .filter((a) => !a.id.startsWith('custom_'))
+                    .map((a) => (
+                      <Badge key={a.id} variant="secondary" className="text-xs gap-1">
+                        {a.icon} {a.label}
+                      </Badge>
+                    ))}
+                </div>
+              </div>
+
+              {/* Custom activities (editable) */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Eigen activiteiten</Label>
+                {customActivities.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nog geen eigen activiteiten.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {customActivities.map((ca) => (
+                      <div key={ca.id} className="flex items-center gap-2 rounded-lg border p-2">
+                        <span className="text-lg">{ca.icon}</span>
+                        <span className="flex-1 text-sm font-medium">{ca.name}</span>
+                        <button
+                          onClick={() => setEditingActivity({ id: ca.id, name: ca.name, icon: ca.icon })}
+                          className="p-1 text-muted-foreground hover:text-foreground"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => deleteCustomActivity(ca.id)}
+                          className="p-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Add new custom activity */}
+              <div className="border-t pt-4 space-y-3">
+                <Label>Nieuwe activiteit</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={newActivityIcon}
+                    onChange={(e) => setNewActivityIcon(e.target.value)}
+                    placeholder="🎯"
+                    className="text-center text-2xl w-16 shrink-0"
+                  />
+                  <Input
+                    value={newActivityName}
+                    onChange={(e) => setNewActivityName(e.target.value)}
+                    placeholder="Naam activiteit"
+                    className="flex-1"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddCustomActivity();
+                    }}
+                  />
+                </div>
+                <Button
+                  onClick={handleAddCustomActivity}
+                  className="w-full"
+                  disabled={!newActivityName.trim()}
+                  size="sm"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Toevoegen
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -450,7 +559,7 @@ export default function MasterListPage() {
                                   )}
                                   {item.conditions.activities && item.conditions.activities.length > 0 && (
                                     <Badge variant="outline" className="text-[10px]">
-                                      {item.conditions.activities.map((a) => activityLabels[a]).join(', ')}
+                                      {item.conditions.activities.map((a) => getActivityLabel(a, customActivities)).join(', ')}
                                     </Badge>
                                   )}
                                   {item.conditions.minPeople && (
@@ -690,6 +799,36 @@ export default function MasterListPage() {
                   ))}
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label>Activiteiten</Label>
+                <div className="flex flex-wrap gap-2">
+                  {allActivities.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() =>
+                        setEditingItem({
+                          ...editingItem,
+                          conditions: {
+                            ...editingItem.conditions,
+                            activities: editingItem.conditions.activities?.includes(a.id)
+                              ? editingItem.conditions.activities.filter((x) => x !== a.id)
+                              : [...(editingItem.conditions.activities || []), a.id],
+                          },
+                        })
+                      }
+                      className={cn(
+                        'rounded-md border px-3 py-1 text-xs transition-colors',
+                        editingItem.conditions.activities?.includes(a.id)
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border'
+                      )}
+                    >
+                      {a.icon} {a.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex gap-2">
                 <Button onClick={handleUpdateItem} className="flex-1">
                   Opslaan
@@ -741,6 +880,56 @@ export default function MasterListPage() {
                   onClick={() => {
                     deleteCategory(editingCategory.id);
                     setEditingCategory(null);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit custom activity dialog */}
+      <Dialog open={!!editingActivity} onOpenChange={(open) => !open && setEditingActivity(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Activiteit bewerken</DialogTitle>
+          </DialogHeader>
+          {editingActivity && (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <div className="space-y-2">
+                  <Label>Icoon</Label>
+                  <Input
+                    value={editingActivity.icon}
+                    onChange={(e) => setEditingActivity({ ...editingActivity, icon: e.target.value })}
+                    className="text-center text-2xl w-16"
+                  />
+                </div>
+                <div className="space-y-2 flex-1">
+                  <Label>Naam</Label>
+                  <Input
+                    value={editingActivity.name}
+                    onChange={(e) => setEditingActivity({ ...editingActivity, name: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    updateCustomActivity(editingActivity.id, editingActivity.name, editingActivity.icon);
+                    setEditingActivity(null);
+                  }}
+                  className="flex-1"
+                >
+                  Opslaan
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    deleteCustomActivity(editingActivity.id);
+                    setEditingActivity(null);
                   }}
                 >
                   <Trash2 className="h-4 w-4" />

@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { User } from 'firebase/auth';
-import { Category, Group, GroupMember, MasterItem, Trip, TripItem } from './types';
+import { Category, CustomActivity, Group, GroupMember, MasterItem, Trip, TripItem } from './types';
 import { useAppStore } from './store';
 
 // --- Helpers ---
@@ -59,15 +59,18 @@ export async function fetchGroup(groupId: string): Promise<Group | null> {
 export async function downloadGroupMasterData(groupId: string): Promise<{
   categories: Category[];
   masterItems: MasterItem[];
+  customActivities: CustomActivity[];
 }> {
-  const [categoriesSnap, masterItemsSnap] = await Promise.all([
+  const [categoriesSnap, masterItemsSnap, customActivitiesSnap] = await Promise.all([
     getDocs(collection(db, 'groups', groupId, 'categories')),
     getDocs(collection(db, 'groups', groupId, 'masterItems')),
+    getDocs(collection(db, 'groups', groupId, 'customActivities')),
   ]);
 
   return {
     categories: categoriesSnap.docs.map((d) => d.data() as Category),
     masterItems: masterItemsSnap.docs.map((d) => d.data() as MasterItem),
+    customActivities: customActivitiesSnap.docs.map((d) => d.data() as CustomActivity),
   };
 }
 
@@ -162,6 +165,12 @@ export async function createGroup(
     allOps.push({
       ref: doc(db, 'groups', groupId, 'masterItems', item.id),
       data: item as unknown as Record<string, unknown>,
+    });
+  }
+  for (const ca of state.customActivities) {
+    allOps.push({
+      ref: doc(db, 'groups', groupId, 'customActivities', ca.id),
+      data: ca as unknown as Record<string, unknown>,
     });
   }
 
@@ -261,6 +270,12 @@ export async function leaveGroup(uid: string, groupId: string): Promise<void> {
         data: item as unknown as Record<string, unknown>,
       });
     }
+    for (const ca of groupData.customActivities) {
+      allOps.push({
+        ref: doc(db, 'users', uid, 'customActivities', ca.id),
+        data: ca as unknown as Record<string, unknown>,
+      });
+    }
     for (let i = 0; i < allOps.length; i += 499) {
       const chunk = allOps.slice(i, i + 499);
       const batch = writeBatch(db);
@@ -295,7 +310,7 @@ export async function deleteGroup(uid: string, groupId: string): Promise<void> {
 // --- Delete group document and sub-collections ---
 
 async function deleteGroupData(groupId: string): Promise<void> {
-  const subCollections = ['categories', 'masterItems'] as const;
+  const subCollections = ['categories', 'masterItems', 'customActivities'] as const;
 
   for (const collectionName of subCollections) {
     const snap = await getDocs(collection(db, 'groups', groupId, collectionName));

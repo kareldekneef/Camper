@@ -1,7 +1,13 @@
 export type Temperature = 'hot' | 'mixed' | 'cold';
 export type Duration = 'weekend' | 'week' | 'extended';
-export type Activity = 'hiking' | 'cycling' | 'fishing' | 'swimming' | 'photography' | 'relaxation' | 'winter_sports' | 'surfing';
+export type Activity = string;
 export type TripStatus = 'planning' | 'active' | 'completed';
+
+export interface CustomActivity {
+  id: string;
+  name: string;
+  icon: string;
+}
 
 export interface MasterItem {
   id: string;

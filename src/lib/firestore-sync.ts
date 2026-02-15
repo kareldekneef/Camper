@@ -7,9 +7,9 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAppStore } from './store';
-import { Category, MasterItem, Trip, TripItem } from './types';
+import { Category, CustomActivity, MasterItem, Trip, TripItem } from './types';
 
-type CollectionName = 'categories' | 'masterItems' | 'trips' | 'tripItems';
+type CollectionName = 'categories' | 'masterItems' | 'trips' | 'tripItems' | 'customActivities';
 
 // --- Upload all local data to Firestore (initial migration) ---
 
@@ -32,6 +32,7 @@ export async function uploadAllToFirestore(uid: string): Promise<void> {
   addItems('masterItems', state.masterItems);
   addItems('trips', state.trips);
   addItems('tripItems', state.tripItems);
+  addItems('customActivities', state.customActivities);
 
   // Write in chunks of 499 (leave room for safety)
   for (let i = 0; i < allOps.length; i += 499) {
@@ -51,12 +52,14 @@ export async function downloadFromFirestore(uid: string): Promise<{
   masterItems: MasterItem[];
   trips: Trip[];
   tripItems: TripItem[];
+  customActivities: CustomActivity[];
 } | null> {
-  const [categoriesSnap, masterItemsSnap, tripsSnap, tripItemsSnap] = await Promise.all([
+  const [categoriesSnap, masterItemsSnap, tripsSnap, tripItemsSnap, customActivitiesSnap] = await Promise.all([
     getDocs(collection(db, 'users', uid, 'categories')),
     getDocs(collection(db, 'users', uid, 'masterItems')),
     getDocs(collection(db, 'users', uid, 'trips')),
     getDocs(collection(db, 'users', uid, 'tripItems')),
+    getDocs(collection(db, 'users', uid, 'customActivities')),
   ]);
 
   // If Firestore is completely empty for this user, return null (trigger migration)
@@ -74,6 +77,7 @@ export async function downloadFromFirestore(uid: string): Promise<{
     masterItems: masterItemsSnap.docs.map((d) => d.data() as MasterItem),
     trips: tripsSnap.docs.map((d) => d.data() as Trip),
     tripItems: tripItemsSnap.docs.map((d) => d.data() as TripItem),
+    customActivities: customActivitiesSnap.docs.map((d) => d.data() as CustomActivity),
   };
 }
 
@@ -129,7 +133,7 @@ export async function syncCollectionToFirestore<T extends { id: string }>(
 
 export async function syncGroupCollection<T extends { id: string }>(
   groupId: string,
-  collectionName: 'categories' | 'masterItems',
+  collectionName: 'categories' | 'masterItems' | 'customActivities',
   items: T[]
 ): Promise<void> {
   const snap = await getDocs(collection(db, 'groups', groupId, collectionName));
@@ -172,7 +176,7 @@ export async function syncGroupCollection<T extends { id: string }>(
 // --- Clear all Firestore data for a user ---
 
 export async function clearFirestoreData(uid: string): Promise<void> {
-  const collections: CollectionName[] = ['categories', 'masterItems', 'trips', 'tripItems'];
+  const collections: CollectionName[] = ['categories', 'masterItems', 'trips', 'tripItems', 'customActivities'];
 
   for (const collectionName of collections) {
     const snap = await getDocs(collection(db, 'users', uid, collectionName));

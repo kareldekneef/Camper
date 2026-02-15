@@ -54,10 +54,11 @@ import {
   temperatureLabels,
   temperatureIcons,
   durationLabels,
-  activityLabels,
-  activityIcons,
+  getAllActivities,
+  getActivityLabel,
 } from '@/lib/constants';
 import { TripItem, Activity, Duration, Temperature } from '@/lib/types';
+import { shouldIncludeItem } from '@/lib/store';
 
 type FilterMode = 'all' | 'unchecked' | 'shopping' | 'forgotten';
 type SortMode = 'default' | 'alpha' | 'packed';
@@ -949,6 +950,10 @@ function EditTripDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateTrip = useAppStore((s) => s.updateTrip);
+  const regenerateTripItems = useAppStore((s) => s.regenerateTripItems);
+  const masterItems = useAppStore((s) => s.masterItems);
+  const allTripItems = useAppStore((s) => s.tripItems);
+  const customActivities = useAppStore((s) => s.customActivities);
 
   const [name, setName] = useState(trip.name);
   const [destination, setDestination] = useState(trip.destination);
@@ -959,8 +964,10 @@ function EditTripDialog({
   const [peopleCount, setPeopleCount] = useState(trip.peopleCount);
   const [activities, setActivities] = useState<Activity[]>(trip.activities);
   const [notes, setNotes] = useState(trip.notes || '');
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const [pendingChanges, setPendingChanges] = useState<{ added: number; removed: number } | null>(null);
 
-  const allActivities = Object.keys(activityLabels) as Activity[];
+  const allActivitiesList = getAllActivities(customActivities);
 
   const toggleActivity = (activity: Activity) => {
     setActivities((prev) =>
@@ -970,7 +977,59 @@ function EditTripDialog({
     );
   };
 
+  // Check if filter parameters changed (affects item list)
+  const filterParamsChanged =
+    temperature !== trip.temperature ||
+    duration !== trip.duration ||
+    peopleCount !== trip.peopleCount ||
+    JSON.stringify([...activities].sort()) !== JSON.stringify([...trip.activities].sort());
+
+  // Preview what would change
+  const previewChanges = () => {
+    const currentTripItems = allTripItems.filter((ti) => ti.tripId === trip.id);
+    const newParams = { temperature, duration, peopleCount, activities };
+
+    const newMatchingMasterIds = new Set(
+      masterItems
+        .filter((mi) => shouldIncludeItem(mi, newParams.temperature, newParams.duration, newParams.peopleCount, newParams.activities))
+        .map((mi) => mi.id)
+    );
+
+    const existingMasterItemIds = new Set(
+      currentTripItems
+        .filter((ti) => ti.masterItemId && !ti.isCustom)
+        .map((ti) => ti.masterItemId!)
+    );
+
+    const toAdd = masterItems.filter(
+      (mi) => newMatchingMasterIds.has(mi.id) && !existingMasterItemIds.has(mi.id)
+    ).length;
+
+    const toRemove = currentTripItems.filter(
+      (ti) =>
+        ti.masterItemId &&
+        !ti.isCustom &&
+        !ti.checked &&
+        !newMatchingMasterIds.has(ti.masterItemId)
+    ).length;
+
+    return { added: toAdd, removed: toRemove };
+  };
+
   const handleSave = () => {
+    if (filterParamsChanged) {
+      const changes = previewChanges();
+      if (changes.added > 0 || changes.removed > 0) {
+        setPendingChanges(changes);
+        setShowRegenConfirm(true);
+        return;
+      }
+    }
+    // No item changes needed, save directly
+    doSave(false);
+  };
+
+  const doSave = (regenerate: boolean) => {
     updateTrip(trip.id, {
       name: name.trim() || trip.name,
       destination: destination.trim(),
@@ -982,8 +1041,59 @@ function EditTripDialog({
       activities,
       notes: notes.trim() || undefined,
     });
+    if (regenerate) {
+      regenerateTripItems(trip.id, { temperature, duration, peopleCount, activities });
+    }
+    setShowRegenConfirm(false);
+    setPendingChanges(null);
     onOpenChange(false);
   };
+
+  // Regeneration confirmation sub-dialog
+  if (showRegenConfirm && pendingChanges) {
+    return (
+      <Dialog open={open} onOpenChange={(o) => { if (!o) { setShowRegenConfirm(false); setPendingChanges(null); } onOpenChange(o); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Lijst aanpassen?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              De wijzigingen zullen je paklijst aanpassen:
+            </p>
+            <div className="space-y-2">
+              {pendingChanges.added > 0 && (
+                <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
+                  <Plus className="h-4 w-4" />
+                  <span><strong>{pendingChanges.added}</strong> {pendingChanges.added === 1 ? 'item' : 'items'} toevoegen</span>
+                </div>
+              )}
+              {pendingChanges.removed > 0 && (
+                <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
+                  <Minus className="h-4 w-4" />
+                  <span><strong>{pendingChanges.removed}</strong> niet-ingepakte {pendingChanges.removed === 1 ? 'item' : 'items'} verwijderen</span>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ingepakte items en handmatig toegevoegde items blijven behouden.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => doSave(false)}>
+                Alleen details opslaan
+              </Button>
+              <Button className="flex-1" onClick={() => doSave(true)}>
+                Doorgaan
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1061,13 +1171,13 @@ function EditTripDialog({
           <div className="space-y-2">
             <Label>Activiteiten</Label>
             <div className="grid grid-cols-2 gap-2">
-              {allActivities.map((activity) => {
-                const isSelected = activities.includes(activity);
+              {allActivitiesList.map((activity) => {
+                const isSelected = activities.includes(activity.id);
                 return (
                   <button
-                    key={activity}
+                    key={activity.id}
                     type="button"
-                    onClick={() => toggleActivity(activity)}
+                    onClick={() => toggleActivity(activity.id)}
                     className={cn(
                       'flex items-center gap-2 rounded-lg border p-2 text-xs transition-colors',
                       isSelected
@@ -1075,8 +1185,8 @@ function EditTripDialog({
                         : 'border-border hover:border-primary/50'
                     )}
                   >
-                    <span>{activityIcons[activity]}</span>
-                    <span className="font-medium">{activityLabels[activity]}</span>
+                    <span>{activity.icon}</span>
+                    <span className="font-medium">{activity.label}</span>
                     {isSelected && <Check className="ml-auto h-3 w-3" />}
                   </button>
                 );

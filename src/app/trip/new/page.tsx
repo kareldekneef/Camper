@@ -17,9 +17,8 @@ import { Activity, Duration, Temperature } from '@/lib/types';
 import {
   temperatureLabels,
   durationLabels,
-  activityLabels,
-  activityIcons,
   temperatureIcons,
+  getAllActivities,
 } from '@/lib/constants';
 import { ArrowLeft, Check, CalendarDays, UsersRound } from 'lucide-react';
 import Link from 'next/link';
@@ -45,6 +44,7 @@ export default function NewTripPage() {
   const { user } = useAuth();
   const createTrip = useAppStore((s) => s.createTrip);
   const currentGroup = useAppStore((s) => s.currentGroup);
+  const customActivities = useAppStore((s) => s.customActivities);
 
   const [name, setName] = useState('');
   const [destination, setDestination] = useState('');
@@ -55,7 +55,7 @@ export default function NewTripPage() {
   const [activities, setActivities] = useState<Activity[]>(['relaxation']);
   const [shareWithGroup, setShareWithGroup] = useState(true);
 
-  const allActivities = Object.keys(activityLabels) as Activity[];
+  const allActivities = getAllActivities(customActivities);
 
   // Derived values from date range
   const nights = dateRange?.from && dateRange?.to
@@ -260,12 +260,12 @@ export default function NewTripPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-2">
               {allActivities.map((activity) => {
-                const isSelected = activities.includes(activity);
+                const isSelected = activities.includes(activity.id);
                 return (
                   <button
-                    key={activity}
+                    key={activity.id}
                     type="button"
-                    onClick={() => toggleActivity(activity)}
+                    onClick={() => toggleActivity(activity.id)}
                     className={cn(
                       'flex items-center gap-2 rounded-lg border p-3 text-sm transition-colors',
                       isSelected
@@ -273,8 +273,8 @@ export default function NewTripPage() {
                         : 'border-border hover:border-primary/50'
                     )}
                   >
-                    <span>{activityIcons[activity]}</span>
-                    <span className="font-medium">{activityLabels[activity]}</span>
+                    <span>{activity.icon}</span>
+                    <span className="font-medium">{activity.label}</span>
                     {isSelected && <Check className="ml-auto h-4 w-4" />}
                   </button>
                 );
