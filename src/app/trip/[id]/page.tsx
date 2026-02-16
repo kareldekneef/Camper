@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useState, useRef, useCallback } from 'react';
+import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,6 +96,22 @@ export default function TripDetailPage({
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
   const [shareStatus, setShareStatus] = useState<string>('');
+
+  const handleDeleteTripItem = useCallback((item: TripItem) => {
+    const deletedItem = { ...item };
+    deleteTripItem(item.id);
+    toast('Item verwijderd', {
+      description: `"${deletedItem.name}" is verwijderd.`,
+      action: {
+        label: 'Ongedaan maken',
+        onClick: () => {
+          useAppStore.setState((state) => ({
+            tripItems: [...state.tripItems, deletedItem],
+          }));
+        },
+      },
+    });
+  }, [deleteTripItem]);
 
   if (!trip) {
     return (
@@ -439,7 +456,7 @@ export default function TripDetailPage({
                           <ItemRow
                             item={item}
                             onToggle={() => toggleTripItem(item.id)}
-                            onDelete={() => deleteTripItem(item.id)}
+                            onDelete={() => handleDeleteTripItem(item)}
                             onUpdateNotes={(notes) =>
                               updateTripItem(item.id, { notes })
                             }
@@ -465,7 +482,7 @@ export default function TripDetailPage({
                         item={item}
                         hideDragHandle
                         onToggle={() => toggleTripItem(item.id)}
-                        onDelete={() => deleteTripItem(item.id)}
+                        onDelete={() => handleDeleteTripItem(item)}
                         onUpdateNotes={(notes) =>
                           updateTripItem(item.id, { notes })
                         }

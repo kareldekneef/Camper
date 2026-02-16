@@ -7,6 +7,7 @@ import { ServiceWorkerRegister } from '@/components/sw-register';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/lib/auth-context';
 import { OfflineIndicator } from '@/components/offline-indicator';
+import { Toaster } from 'sonner';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -57,6 +58,7 @@ export default function RootLayout({
             <StoreInitializer>
               <AppShell>{children}</AppShell>
             </StoreInitializer>
+            <Toaster position="bottom-center" richColors closeButton duration={5000} offset="80px" style={{ zIndex: 9999 }} />
           </ThemeProvider>
         </AuthProvider>
       </body>

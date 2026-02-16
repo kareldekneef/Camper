@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
 import { PlusCircle, Copy, Trash2, MapPin, Calendar, Users, Thermometer, UsersRound } from 'lucide-react';
 import { temperatureLabels, temperatureIcons } from '@/lib/constants';
-import { Trip, GroupMember } from '@/lib/types';
+import { Trip } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useState, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
 
 function TripCard({ trip }: { trip: Trip }) {
   const allTripItems = useAppStore((s) => s.tripItems);
@@ -26,7 +27,6 @@ function TripCard({ trip }: { trip: Trip }) {
   const copyTrip = useAppStore((s) => s.copyTrip);
   const [copyName, setCopyName] = useState(`${trip.name} (kopie)`);
   const [showCopyDialog, setShowCopyDialog] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const checked = tripItems.filter((ti) => ti.checked).length;
   const total = tripItems.length;
@@ -49,9 +49,29 @@ function TripCard({ trip }: { trip: Trip }) {
     setShowCopyDialog(false);
   };
 
-  const handleDelete = () => {
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Snapshot trip + items for undo
+    const deletedTrip = trip;
+    const deletedItems = [...tripItems];
+
     deleteTrip(trip.id);
-    setShowDeleteConfirm(false);
+
+    toast('Trip verwijderd', {
+      description: `"${deletedTrip.name}" is verwijderd.`,
+      action: {
+        label: 'Ongedaan maken',
+        onClick: () => {
+          // Restore trip + items
+          useAppStore.setState((state) => ({
+            trips: [...state.trips, deletedTrip],
+            tripItems: [...state.tripItems, ...deletedItems],
+          }));
+        },
+      },
+    });
   };
 
   return (
@@ -95,14 +115,13 @@ function TripCard({ trip }: { trip: Trip }) {
           </div>
         </CardContent>
       </Link>
-      <div className="absolute bottom-3 right-3 flex gap-1">
+      <div className="absolute bottom-3 right-3 flex gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         <Dialog open={showCopyDialog} onOpenChange={setShowCopyDialog}>
           <DialogTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={(e) => e.stopPropagation()}
             >
               <Copy className="h-4 w-4" />
             </Button>
@@ -123,34 +142,14 @@ function TripCard({ trip }: { trip: Trip }) {
             </div>
           </DialogContent>
         </Dialog>
-        <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-          <DialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive hover:text-destructive"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent onClick={(e) => e.stopPropagation()}>
-            <DialogHeader>
-              <DialogTitle>Trip verwijderen?</DialogTitle>
-            </DialogHeader>
-            <p className="text-sm text-muted-foreground">
-              Weet je zeker dat je &quot;{trip.name}&quot; wilt verwijderen? Dit kan niet ongedaan worden.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
-                Annuleren
-              </Button>
-              <Button variant="destructive" onClick={handleDelete}>
-                Verwijderen
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          onClick={handleDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </div>
     </Card>
   );

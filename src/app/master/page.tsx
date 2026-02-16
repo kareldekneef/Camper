@@ -38,6 +38,7 @@ import { SortableList, SortableItem, DragHandle } from '@/components/sortable-li
 import { cn } from '@/lib/utils';
 import { MasterItem, Temperature, Activity } from '@/lib/types';
 import { temperatureLabels, getAllActivities, getActivityLabel } from '@/lib/constants';
+import { toast } from 'sonner';
 
 export default function MasterListPage() {
   const categories = useAppStore((s) => s.categories);
@@ -85,6 +86,61 @@ export default function MasterListPage() {
   const [newActivityIcon, setNewActivityIcon] = useState('🎯');
 
   const allActivities = getAllActivities(customActivities);
+
+  const handleDeleteMasterItem = (item: MasterItem) => {
+    const deletedItem = { ...item };
+    deleteMasterItem(item.id);
+    toast('Item verwijderd', {
+      description: `"${deletedItem.name}" is verwijderd.`,
+      action: {
+        label: 'Ongedaan maken',
+        onClick: () => {
+          useAppStore.setState((state) => ({
+            masterItems: [...state.masterItems, deletedItem],
+          }));
+        },
+      },
+    });
+  };
+
+  const handleDeleteCategory = (catId: string) => {
+    const deletedCategory = categories.find((c) => c.id === catId);
+    if (!deletedCategory) return;
+    const deletedItems = masterItems.filter((i) => i.categoryId === catId);
+    deleteCategory(catId);
+    toast('Categorie verwijderd', {
+      description: `"${deletedCategory.name}" en ${deletedItems.length} items verwijderd.`,
+      action: {
+        label: 'Ongedaan maken',
+        onClick: () => {
+          useAppStore.setState((state) => ({
+            categories: [...state.categories, deletedCategory],
+            masterItems: [...state.masterItems, ...deletedItems],
+          }));
+        },
+      },
+    });
+  };
+
+  const handleDeleteCustomActivity = (activityId: string) => {
+    const deletedActivity = customActivities.find((ca) => ca.id === activityId);
+    if (!deletedActivity) return;
+    // Snapshot master items before deletion (to restore activity references)
+    const itemsBefore = masterItems.map((mi) => ({ ...mi }));
+    deleteCustomActivity(activityId);
+    toast('Activiteit verwijderd', {
+      description: `"${deletedActivity.name}" is verwijderd.`,
+      action: {
+        label: 'Ongedaan maken',
+        onClick: () => {
+          useAppStore.setState((state) => ({
+            customActivities: [...state.customActivities, deletedActivity],
+            masterItems: itemsBefore,
+          }));
+        },
+      },
+    });
+  };
 
   const toggleCategory = (categoryId: string) => {
     setCollapsedCategories((prev) => {
@@ -430,7 +486,7 @@ export default function MasterListPage() {
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => deleteCustomActivity(ca.id)}
+                          onClick={() => handleDeleteCustomActivity(ca.id)}
                           className="p-1 text-muted-foreground hover:text-destructive"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -574,7 +630,7 @@ export default function MasterListPage() {
                                     <Edit2 className="h-3.5 w-3.5" />
                                   </button>
                                   <button
-                                    onClick={() => deleteMasterItem(item.id)}
+                                    onClick={() => handleDeleteMasterItem(item)}
                                     className="p-1 text-muted-foreground hover:text-destructive"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -644,7 +700,7 @@ export default function MasterListPage() {
                   <Edit2 className="h-3.5 w-3.5" />
                 </button>
                 <button
-                  onClick={() => deleteCategory(cat.id)}
+                  onClick={() => handleDeleteCategory(cat.id)}
                   className="p-1 text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -833,7 +889,7 @@ export default function MasterListPage() {
                 <Button onClick={handleUpdateItem} className="flex-1">
                   Opslaan
                 </Button>
-                <Button variant="destructive" onClick={() => { deleteMasterItem(editingItem.id); setEditingItem(null); }}>
+                <Button variant="destructive" onClick={() => { handleDeleteMasterItem(editingItem); setEditingItem(null); }}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -878,7 +934,7 @@ export default function MasterListPage() {
                 <Button
                   variant="destructive"
                   onClick={() => {
-                    deleteCategory(editingCategory.id);
+                    handleDeleteCategory(editingCategory.id);
                     setEditingCategory(null);
                   }}
                 >
@@ -928,7 +984,7 @@ export default function MasterListPage() {
                 <Button
                   variant="destructive"
                   onClick={() => {
-                    deleteCustomActivity(editingActivity.id);
+                    handleDeleteCustomActivity(editingActivity.id);
                     setEditingActivity(null);
                   }}
                 >
