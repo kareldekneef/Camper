@@ -342,14 +342,14 @@ function hashState(state: {
   categories: { id: string; name: string; sortOrder: number }[];
   masterItems: { id: string; name: string; categoryId: string }[];
   customActivities: { id: string; name: string }[];
-  trips: { id: string; name: string; status: string; destination: string; startDate: string; endDate: string; temperature: string; duration: string; peopleCount: number; activities: string[]; notes?: string; groupId?: string; sharedWith?: string[] }[];
+  trips: { id: string; name: string; status: string; destination: string; startDate: string; endDate: string; temperature: string; duration: string; peopleCount: number; activities: string[]; notes?: string; groupId?: string; sharedWith?: string[]; permissions?: Record<string, string> }[];
   tripItems: { id: string; name: string; checked: boolean; purchased?: boolean; quantity?: number; sortOrder?: number; notes?: string; categoryId: string }[];
 }): string {
   const c = state.categories.map((x) => `${x.id}:${x.name}:${x.sortOrder}`).join(',');
   const m = state.masterItems.map((x) => `${x.id}:${x.name}:${x.categoryId}`).join(',');
   const ca = state.customActivities.map((x) => `${x.id}:${x.name}`).join(',');
   const t = state.trips
-    .map((x) => `${x.id}:${x.name}:${x.status}:${x.destination}:${x.startDate}:${x.endDate}:${x.temperature}:${x.duration}:${x.peopleCount}:${x.activities.join('+')}:${x.notes ?? ''}:${x.groupId ?? ''}:${(x.sharedWith ?? []).join('+')}`)
+    .map((x) => `${x.id}:${x.name}:${x.status}:${x.destination}:${x.startDate}:${x.endDate}:${x.temperature}:${x.duration}:${x.peopleCount}:${x.activities.join('+')}:${x.notes ?? ''}:${x.groupId ?? ''}:${(x.sharedWith ?? []).join('+')}:${JSON.stringify(x.permissions ?? {})}`)
     .join(',');
   const ti = state.tripItems
     .map((x) => `${x.id}:${x.name}:${x.checked ? 1 : 0}:${x.purchased ? 1 : 0}:${x.quantity ?? 1}:${x.sortOrder ?? 0}:${x.notes ?? ''}:${x.categoryId}`)

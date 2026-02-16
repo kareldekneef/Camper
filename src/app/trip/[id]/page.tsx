@@ -1338,9 +1338,14 @@ function PermissionsDialog({
 
   const handleSave = async () => {
     setSaving(true);
+    const permissionsToSave = { ...permissions };
+
+    // Close dialog first to avoid re-render race with store update
+    onOpenChange(false);
+
     try {
       // Update the local store
-      updateTrip(trip.id, { permissions });
+      updateTrip(trip.id, { permissions: permissionsToSave });
 
       // Sync to Firestore
       if (user) {
@@ -1351,7 +1356,6 @@ function PermissionsDialog({
       toast('Rechten bijgewerkt', {
         description: 'De rechten voor deze trip zijn opgeslagen.',
       });
-      onOpenChange(false);
     } catch (error) {
       console.error('Failed to save permissions:', error);
       toast.error('Fout bij opslaan van rechten');
