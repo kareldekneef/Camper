@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState, useRef, useCallback } from 'react';
+import { use, useState, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -84,6 +84,7 @@ export default function TripDetailPage({
   const uncheckAllTripItems = useAppStore((s) => s.uncheckAllTripItems);
   const reorderTripItems = useAppStore((s) => s.reorderTripItems);
   const copyItemToShopping = useAppStore((s) => s.copyItemToShopping);
+  const togglePurchased = useAppStore((s) => s.togglePurchased);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -137,6 +138,16 @@ export default function TripDetailPage({
   const shoppingCategoryId = categories.find(
     (c) => c.id === 'cat-shopping' || c.name.toLowerCase().includes('shopping')
   )?.id;
+
+  // Items that have a shopping link (either have a shopping copy, or are a shopping item)
+  const shoppingLinkedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const ti of tripItems) {
+      if (ti.sourceItemId) ids.add(ti.sourceItemId); // original has a copy
+      if (shoppingCategoryId && ti.categoryId === shoppingCategoryId) ids.add(ti.id); // is a shopping item
+    }
+    return ids;
+  }, [tripItems, shoppingCategoryId]);
 
   // Apply filter mode
   let displayItems = tripItems;
@@ -471,6 +482,11 @@ export default function TripDetailPage({
                                 ? () => copyItemToShopping(item.id)
                                 : undefined
                             }
+                            onTogglePurchased={
+                              shoppingLinkedIds.has(item.id)
+                                ? () => togglePurchased(item.id)
+                                : undefined
+                            }
                           />
                         </SortableItem>
                       ))}
@@ -495,6 +511,11 @@ export default function TripDetailPage({
                         onCopyToShopping={
                           shoppingCategoryId && item.categoryId !== shoppingCategoryId
                             ? () => copyItemToShopping(item.id)
+                            : undefined
+                        }
+                        onTogglePurchased={
+                          shoppingLinkedIds.has(item.id)
+                            ? () => togglePurchased(item.id)
                             : undefined
                         }
                       />
@@ -705,6 +726,7 @@ function ItemRow({
   onUpdateQuantity,
   onSaveToMaster,
   onCopyToShopping,
+  onTogglePurchased,
 }: {
   item: TripItem;
   hideDragHandle?: boolean;
@@ -714,6 +736,7 @@ function ItemRow({
   onUpdateQuantity: (quantity: number) => void;
   onSaveToMaster?: () => void;
   onCopyToShopping?: () => void;
+  onTogglePurchased?: () => void;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -833,6 +856,25 @@ function ItemRow({
             </Badge>
           )}
         </button>
+        {onTogglePurchased && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onTogglePurchased(); }}
+            className="shrink-0"
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <Badge
+              variant="outline"
+              className={cn(
+                'text-[10px] shrink-0 cursor-pointer',
+                item.purchased
+                  ? 'border-blue-200 text-blue-700 bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:bg-blue-950'
+                  : ''
+              )}
+            >
+              {item.purchased ? 'Gekocht' : 'Te kopen'}
+            </Badge>
+          </button>
+        )}
         <div className="relative" onTouchStart={(e) => e.stopPropagation()}>
           <button
             onClick={() => setShowActions(!showActions)}
