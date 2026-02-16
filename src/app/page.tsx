@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
-import { PlusCircle, Copy, Trash2, MapPin, Calendar, Users, Thermometer, UsersRound } from 'lucide-react';
+import { PlusCircle, Copy, Trash2, MapPin, Calendar, Users, Thermometer, UsersRound, Pencil, Eye } from 'lucide-react';
 import { temperatureLabels, temperatureIcons } from '@/lib/constants';
-import { Trip } from '@/lib/types';
+import { Trip, getTripPermission } from '@/lib/types';
+import { useAuth } from '@/lib/auth-context';
 import {
   Dialog,
   DialogContent,
@@ -155,13 +156,16 @@ function TripCard({ trip }: { trip: Trip }) {
   );
 }
 
-function SharedTripCard({ trip, creatorName }: { trip: Trip; creatorName: string }) {
+function SharedTripCard({ trip, creatorName, userUid }: { trip: Trip; creatorName: string; userUid?: string }) {
   const sharedTripItems = useAppStore((s) => s.sharedTripItems);
   const tripItems = sharedTripItems.filter((ti) => ti.tripId === trip.id);
 
   const checked = tripItems.filter((ti) => ti.checked).length;
   const total = tripItems.length;
   const progress = total > 0 ? (checked / total) * 100 : 0;
+
+  const permission = userUid ? getTripPermission(trip, userUid) : 'view';
+  const canEdit = permission === 'edit';
 
   const statusColors: Record<string, string> = {
     planning: 'bg-blue-100 text-blue-800',
@@ -177,15 +181,28 @@ function SharedTripCard({ trip, creatorName }: { trip: Trip; creatorName: string
 
   return (
     <Link href={`/trip/shared/${trip.id}?creator=${trip.creatorId}`}>
-      <Card className="relative border-blue-200 dark:border-blue-800">
+      <Card className={`relative ${canEdit ? 'border-green-200 dark:border-green-800' : 'border-blue-200 dark:border-blue-800'}`}>
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
             <CardTitle className="text-lg">{trip.name}</CardTitle>
-            <Badge className={statusColors[trip.status]} variant="secondary">
-              {statusLabels[trip.status]}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              {canEdit ? (
+                <Badge variant="outline" className="text-[10px] border-green-400 text-green-700 bg-green-50 dark:bg-green-950/30 dark:text-green-300 dark:border-green-700">
+                  <Pencil className="h-2.5 w-2.5 mr-0.5" />
+                  Bewerken
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px]">
+                  <Eye className="h-2.5 w-2.5 mr-0.5" />
+                  Bekijken
+                </Badge>
+              )}
+              <Badge className={statusColors[trip.status]} variant="secondary">
+                {statusLabels[trip.status]}
+              </Badge>
+            </div>
           </div>
-          <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+          <p className={`text-xs flex items-center gap-1 ${canEdit ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'}`}>
             <UsersRound className="h-3 w-3" />
             {creatorName}
           </p>
@@ -226,6 +243,7 @@ export default function HomePage() {
   const sharedTrips = useAppStore((s) => s.sharedTrips);
   const seenSharedTripIds = useAppStore((s) => s.seenSharedTripIds);
   const markSharedTripsSeen = useAppStore((s) => s.markSharedTripsSeen);
+  const { user } = useAuth();
 
   const activeTrips = trips.filter((t) => t.status !== 'completed');
   const completedTrips = trips.filter((t) => t.status === 'completed');
@@ -314,6 +332,7 @@ export default function HomePage() {
                       key={trip.id}
                       trip={trip}
                       creatorName={creator?.displayName || 'Onbekend'}
+                      userUid={user?.uid}
                     />
                   );
                 })}

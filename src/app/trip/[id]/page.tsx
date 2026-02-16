@@ -46,6 +46,9 @@ import {
   ArrowDownAZ,
   ListOrdered,
   PackageCheck,
+  UsersRound,
+  Eye,
+  Pencil,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
@@ -58,8 +61,10 @@ import {
   getAllActivities,
   getActivityLabel,
 } from '@/lib/constants';
-import { TripItem, Activity, Duration, Temperature } from '@/lib/types';
+import { TripItem, Activity, Duration, Temperature, TripPermission } from '@/lib/types';
 import { shouldIncludeItem } from '@/lib/store';
+import { useAuth } from '@/lib/auth-context';
+import { syncCollectionToFirestore } from '@/lib/firestore-sync';
 
 type FilterMode = 'all' | 'unchecked' | 'shopping' | 'forgotten';
 type SortMode = 'default' | 'alpha' | 'packed';
@@ -85,6 +90,8 @@ export default function TripDetailPage({
   const reorderTripItems = useAppStore((s) => s.reorderTripItems);
   const copyItemToShopping = useAppStore((s) => s.copyItemToShopping);
   const togglePurchased = useAppStore((s) => s.togglePurchased);
+  const currentGroup = useAppStore((s) => s.currentGroup);
+  const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -97,6 +104,10 @@ export default function TripDetailPage({
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
   const [shareStatus, setShareStatus] = useState<string>('');
+  const [showPermissions, setShowPermissions] = useState(false);
+
+  const isSharedTrip = !!trip?.groupId && !!trip?.creatorId;
+  const isCreator = isSharedTrip && trip?.creatorId === user?.uid;
 
   const handleDeleteTripItem = useCallback((item: TripItem) => {
     const deletedItem = { ...item };
@@ -300,6 +311,16 @@ export default function TripDetailPage({
             <span>{temperatureIcons[trip.temperature]}</span>
           </div>
         </div>
+        {isCreator && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setShowPermissions(true)}
+          >
+            <UsersRound className="h-4 w-4" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -656,6 +677,16 @@ export default function TripDetailPage({
         open={showEditTrip}
         onOpenChange={setShowEditTrip}
       />
+
+      {/* Permissions management dialog (creator only) */}
+      {isCreator && currentGroup && (
+        <PermissionsDialog
+          trip={trip}
+          group={currentGroup}
+          open={showPermissions}
+          onOpenChange={setShowPermissions}
+        />
+      )}
     </div>
   );
 }
@@ -1265,6 +1296,136 @@ function EditTripDialog({
 
           <Button onClick={handleSave} className="w-full">
             Opslaan
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Permissions management dialog (for trip creator)
+function PermissionsDialog({
+  trip,
+  group,
+  open,
+  onOpenChange,
+}: {
+  trip: NonNullable<ReturnType<typeof useAppStore.getState>['trips'][number]>;
+  group: NonNullable<ReturnType<typeof useAppStore.getState>['currentGroup']>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const updateTrip = useAppStore((s) => s.updateTrip);
+  const { user } = useAuth();
+
+  const [permissions, setPermissions] = useState<Record<string, TripPermission>>(() => {
+    // Initialize from trip.permissions, or default all to 'view'
+    const initial: Record<string, TripPermission> = {};
+    for (const uid of Object.keys(group.members)) {
+      if (uid === trip.creatorId) continue; // Skip creator
+      initial[uid] = trip.permissions?.[uid] || 'view';
+    }
+    return initial;
+  });
+  const [saving, setSaving] = useState(false);
+
+  const togglePermission = (uid: string) => {
+    setPermissions(prev => ({
+      ...prev,
+      [uid]: prev[uid] === 'edit' ? 'view' : 'edit',
+    }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Update the local store
+      updateTrip(trip.id, { permissions });
+
+      // Sync to Firestore
+      if (user) {
+        const updatedTrips = useAppStore.getState().trips;
+        await syncCollectionToFirestore(user.uid, 'trips', updatedTrips);
+      }
+
+      toast('Rechten bijgewerkt', {
+        description: 'De rechten voor deze trip zijn opgeslagen.',
+      });
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Failed to save permissions:', error);
+      toast.error('Fout bij opslaan van rechten');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UsersRound className="h-5 w-5" />
+            Rechten beheren
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Bepaal wie deze trip kan bewerken of alleen kan bekijken.
+          </p>
+
+          <div className="space-y-2">
+            {Object.entries(group.members).map(([uid, member]) => {
+              const isCreator = uid === trip.creatorId;
+              const permission = isCreator ? 'owner' : (permissions[uid] || 'view');
+
+              return (
+                <div key={uid} className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {member.photoURL ? (
+                      <img
+                        src={member.photoURL}
+                        alt=""
+                        className="h-7 w-7 rounded-full"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                        {member.displayName.charAt(0)}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{member.displayName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                    </div>
+                  </div>
+                  {isCreator ? (
+                    <span className="text-xs text-muted-foreground font-medium shrink-0">Eigenaar</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => togglePermission(uid)}
+                      className={cn(
+                        'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors shrink-0',
+                        permission === 'edit'
+                          ? 'border-green-400 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300 dark:border-green-700'
+                          : 'border-border text-muted-foreground'
+                      )}
+                    >
+                      {permission === 'edit' ? (
+                        <><Pencil className="h-3 w-3" /> Bewerken</>
+                      ) : (
+                        <><Eye className="h-3 w-3" /> Bekijken</>
+                      )}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <Button onClick={handleSave} className="w-full" disabled={saving}>
+            {saving ? 'Opslaan...' : 'Opslaan'}
           </Button>
         </div>
       </DialogContent>

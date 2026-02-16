@@ -7,6 +7,7 @@ import {
   MasterItem,
   Trip,
   TripItem,
+  TripPermission,
   Temperature,
   Duration,
   Activity,
@@ -64,6 +65,7 @@ interface AppState {
     activities: Activity[];
     creatorId?: string;
     shareWithGroup?: boolean;
+    permissions?: Record<string, TripPermission>;
   }) => string;
   updateTrip: (id: string, updates: Partial<Trip>) => void;
   deleteTrip: (id: string) => void;
@@ -276,7 +278,7 @@ export const useAppStore = create<AppState>()(
         const state = get();
         const tripId = uuid();
         const group = state.currentGroup;
-        const { creatorId, shareWithGroup, ...tripParams } = params;
+        const { creatorId, shareWithGroup, permissions: paramPermissions, ...tripParams } = params;
         const trip: Trip = {
           id: tripId,
           ...tripParams,
@@ -287,6 +289,9 @@ export const useAppStore = create<AppState>()(
                 groupId: group.id,
                 creatorId: creatorId,
                 sharedWith: Object.keys(group.members),
+                permissions: paramPermissions ?? Object.fromEntries(
+                  Object.keys(group.members).map(uid => [uid, 'view' as const])
+                ),
               }
             : {}),
         };

@@ -32,6 +32,7 @@ export interface Category {
 }
 
 export type GroupRole = 'owner' | 'member';
+export type TripPermission = 'view' | 'edit';
 
 export interface GroupMember {
   uid: string;
@@ -67,8 +68,17 @@ export interface Trip {
   notes?: string;
   // Group fields (optional — absent for personal trips)
   groupId?: string;
-  sharedWith?: string[];    // UIDs who can view this trip
+  sharedWith?: string[];    // UIDs who can view this trip (kept for backward compat)
+  permissions?: Record<string, TripPermission>;  // per-member view/edit permissions
   creatorId?: string;       // UID of trip creator
+}
+
+/** Get a user's permission level for a trip */
+export function getTripPermission(trip: Trip, uid: string): 'owner' | 'edit' | 'view' | null {
+  if (trip.creatorId === uid) return 'owner';
+  if (trip.permissions?.[uid]) return trip.permissions[uid];
+  if (trip.sharedWith?.includes(uid)) return 'view'; // backward compat
+  return null;
 }
 
 export interface TripItem {

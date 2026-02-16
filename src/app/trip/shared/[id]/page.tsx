@@ -13,15 +13,20 @@ import {
   CheckCircle2,
   Circle,
   UsersRound,
+  Pencil,
+  Eye,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
-import { TripItem } from '@/lib/types';
+import { useState, useCallback, useRef } from 'react';
+import { TripItem, getTripPermission } from '@/lib/types';
 import {
   temperatureLabels,
   temperatureIcons,
   durationLabels,
 } from '@/lib/constants';
+import { useAuth } from '@/lib/auth-context';
+import { updateSharedTripItem } from '@/lib/group-sync';
+import { cn } from '@/lib/utils';
 
 export default function SharedTripDetailPage({
   params,
@@ -31,9 +36,11 @@ export default function SharedTripDetailPage({
   const { id } = use(params);
   const searchParams = useSearchParams();
   const creatorId = searchParams.get('creator');
+  const { user } = useAuth();
 
   const sharedTrips = useAppStore((s) => s.sharedTrips);
   const sharedTripItems = useAppStore((s) => s.sharedTripItems);
+  const setSharedTrips = useAppStore((s) => s.setSharedTrips);
   const categories = useAppStore((s) => s.categories);
   const currentGroup = useAppStore((s) => s.currentGroup);
 
@@ -53,6 +60,10 @@ export default function SharedTripDetailPage({
     );
   }
 
+  // Determine user's permission level
+  const userPermission = user ? getTripPermission(trip, user.uid) : 'view';
+  const canEdit = userPermission === 'edit';
+
   const toggleCategory = (categoryId: string) => {
     setCollapsedCategories((prev) => {
       const next = new Set(prev);
@@ -60,6 +71,31 @@ export default function SharedTripDetailPage({
       else next.add(categoryId);
       return next;
     });
+  };
+
+  // Toggle an item's checked state (for editors)
+  const handleToggleItem = async (item: TripItem) => {
+    if (!canEdit || !creatorId) return;
+
+    const newChecked = !item.checked;
+
+    // Optimistic update: update local sharedTripItems state
+    const updatedItems = sharedTripItems.map((ti) =>
+      ti.id === item.id ? { ...ti, checked: newChecked } : ti
+    );
+    setSharedTrips(sharedTrips, updatedItems);
+
+    // Write to Firestore
+    try {
+      await updateSharedTripItem(creatorId, item.id, { checked: newChecked });
+    } catch (error) {
+      // Revert on failure
+      console.error('Failed to update shared trip item:', error);
+      const revertedItems = sharedTripItems.map((ti) =>
+        ti.id === item.id ? { ...ti, checked: !newChecked } : ti
+      );
+      setSharedTrips(sharedTrips, revertedItems);
+    }
   };
 
   const creator = creatorId && currentGroup
@@ -113,15 +149,34 @@ export default function SharedTripDetailPage({
         <Badge variant="secondary">{statusLabels[trip.status]}</Badge>
       </div>
 
-      {/* Creator badge */}
-      <div className="mb-4 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3">
-        <UsersRound className="h-4 w-4 text-blue-600 shrink-0" />
-        <span className="text-sm text-blue-700 dark:text-blue-300">
+      {/* Creator badge + permission */}
+      <div className={cn(
+        'mb-4 flex items-center gap-2 rounded-lg border p-3',
+        canEdit
+          ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30'
+          : 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30'
+      )}>
+        <UsersRound className={cn(
+          'h-4 w-4 shrink-0',
+          canEdit ? 'text-green-600' : 'text-blue-600'
+        )} />
+        <span className={cn(
+          'text-sm',
+          canEdit ? 'text-green-700 dark:text-green-300' : 'text-blue-700 dark:text-blue-300'
+        )}>
           Gedeelde trip van <strong>{creator?.displayName || 'Onbekend'}</strong>
         </span>
-        <Badge variant="outline" className="ml-auto text-xs">
-          Alleen lezen
-        </Badge>
+        {canEdit ? (
+          <Badge variant="outline" className="ml-auto text-xs border-green-400 text-green-700 bg-green-50 dark:bg-green-950/30 dark:text-green-300 dark:border-green-700">
+            <Pencil className="h-3 w-3 mr-1" />
+            Bewerken
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="ml-auto text-xs">
+            <Eye className="h-3 w-3 mr-1" />
+            Alleen lezen
+          </Badge>
+        )}
       </div>
 
       {/* Trip info */}
@@ -150,7 +205,7 @@ export default function SharedTripDetailPage({
         </div>
       )}
 
-      {/* Category groups (read-only) */}
+      {/* Category groups */}
       <div className="space-y-2 pb-4">
         {sortedCategories.map((category) => {
           const items = groupedItems.get(category.id) || [];
@@ -177,36 +232,14 @@ export default function SharedTripDetailPage({
 
               {!isCollapsed && (
                 <div className="border-t">
-                  {items.map((item) => {
-                    const quantity = item.quantity ?? 1;
-                    return (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0"
-                      >
-                        {item.checked ? (
-                          <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                        ) : (
-                          <Circle className="h-5 w-5 text-muted-foreground shrink-0" />
-                        )}
-                        <span
-                          className={`flex-1 text-sm ${
-                            item.checked ? 'line-through text-muted-foreground' : ''
-                          }`}
-                        >
-                          {item.name}
-                        </span>
-                        {quantity > 1 && (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            ×{quantity}
-                          </Badge>
-                        )}
-                        {item.notes && (
-                          <span className="text-xs text-muted-foreground">💬</span>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {items.map((item) => (
+                    <SharedItemRow
+                      key={item.id}
+                      item={item}
+                      canEdit={canEdit}
+                      onToggle={() => handleToggleItem(item)}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -217,6 +250,125 @@ export default function SharedTripDetailPage({
           <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
             Geen items in deze trip
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SharedItemRow({
+  item,
+  canEdit,
+  onToggle,
+}: {
+  item: TripItem;
+  canEdit: boolean;
+  onToggle: () => void;
+}) {
+  const quantity = item.quantity ?? 1;
+  const [swipeX, setSwipeX] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const swipeThreshold = 70;
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!canEdit) return;
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+    setSwiping(false);
+  }, [canEdit]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!canEdit || !touchStartRef.current) return;
+    const dx = e.touches[0].clientX - touchStartRef.current.x;
+    const dy = e.touches[0].clientY - touchStartRef.current.y;
+    if (Math.abs(dy) > Math.abs(dx) && !swiping) {
+      touchStartRef.current = null;
+      return;
+    }
+    if (Math.abs(dx) > 10) setSwiping(true);
+    setSwipeX(Math.max(0, Math.min(100, dx)));
+  }, [canEdit, swiping]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!canEdit) return;
+    if (swipeX >= swipeThreshold) {
+      onToggle();
+    }
+    setSwipeX(0);
+    setSwiping(false);
+    touchStartRef.current = null;
+  }, [canEdit, swipeX, onToggle]);
+
+  const swipeProgress = Math.min(swipeX / swipeThreshold, 1);
+
+  return (
+    <div className={cn("border-b last:border-b-0 relative", canEdit && "overflow-hidden")}>
+      {/* Swipe reveal background (editors only) */}
+      {canEdit && (
+        <div
+          className={cn(
+            'absolute inset-y-0 left-0 flex items-center pl-4 transition-opacity',
+            item.checked
+              ? 'bg-orange-100 dark:bg-orange-950/50'
+              : 'bg-green-100 dark:bg-green-950/50'
+          )}
+          style={{ width: `${swipeX}px`, opacity: swipeProgress }}
+        >
+          {swipeProgress >= 1 && (
+            item.checked ? (
+              <Circle className="h-5 w-5 text-orange-600" />
+            ) : (
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+            )
+          )}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "flex items-center gap-3 px-4 py-2.5 bg-background relative",
+          canEdit && "cursor-pointer"
+        )}
+        style={{
+          transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined,
+          transition: swipeX > 0 || swiping ? (swiping ? 'none' : 'transform 200ms ease-out') : undefined,
+        }}
+        onClick={canEdit && !swiping ? onToggle : undefined}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {item.checked ? (
+          <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+        ) : (
+          <Circle className="h-5 w-5 text-muted-foreground shrink-0" />
+        )}
+        <span
+          className={cn(
+            'flex-1 text-sm',
+            item.checked && 'line-through text-muted-foreground'
+          )}
+        >
+          {item.name}
+        </span>
+        {quantity > 1 && (
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+            ×{quantity}
+          </Badge>
+        )}
+        {item.purchased && (
+          <Badge
+            variant="outline"
+            className="text-[10px] border-blue-200 text-blue-700 bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:bg-blue-950"
+          >
+            Gekocht
+          </Badge>
+        )}
+        {item.notes && (
+          <span className="text-xs text-muted-foreground">💬</span>
         )}
       </div>
     </div>

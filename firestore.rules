@@ -19,6 +19,13 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(userId)).data.groupId != null
           && exists(/databases/$(database)/documents/groups/$(get(/databases/$(database)/documents/users/$(userId)).data.groupId))
           && request.auth.uid in get(/databases/$(database)/documents/groups/$(get(/databases/$(database)/documents/users/$(userId)).data.groupId)).data.members;
+
+        // Editors can update tripItems (check permissions on the parent trip)
+        allow update: if request.auth != null
+          && subcollection == 'tripItems'
+          && resource.data.tripId is string
+          && exists(/databases/$(database)/documents/users/$(userId)/trips/$(resource.data.tripId))
+          && get(/databases/$(database)/documents/users/$(userId)/trips/$(resource.data.tripId)).data.permissions[request.auth.uid] == 'edit';
       }
     }
 

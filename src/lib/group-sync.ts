@@ -329,6 +329,16 @@ async function deleteGroupData(groupId: string): Promise<void> {
   await deleteDoc(doc(db, 'groups', groupId));
 }
 
+// --- Update a shared trip item (editor writes to creator's tripItems) ---
+
+export async function updateSharedTripItem(
+  creatorUid: string,
+  itemId: string,
+  updates: Partial<{ checked: boolean; purchased: boolean; quantity: number; notes: string }>
+): Promise<void> {
+  await updateDoc(doc(db, 'users', creatorUid, 'tripItems', itemId), updates);
+}
+
 // --- Regenerate invite code ---
 
 export async function regenerateInviteCode(groupId: string): Promise<string> {

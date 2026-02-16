@@ -13,14 +13,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Activity, Duration, Temperature } from '@/lib/types';
+import { Activity, Duration, Temperature, TripPermission } from '@/lib/types';
 import {
   temperatureLabels,
   durationLabels,
   temperatureIcons,
   getAllActivities,
 } from '@/lib/constants';
-import { ArrowLeft, Check, CalendarDays, UsersRound } from 'lucide-react';
+import { ArrowLeft, Check, CalendarDays, UsersRound, Eye, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -54,6 +54,21 @@ export default function NewTripPage() {
   const [peopleCount, setPeopleCount] = useState(2);
   const [activities, setActivities] = useState<Activity[]>(['relaxation']);
   const [shareWithGroup, setShareWithGroup] = useState(true);
+  const [memberPermissions, setMemberPermissions] = useState<Record<string, TripPermission>>(() => {
+    if (!currentGroup) return {};
+    return Object.fromEntries(
+      Object.keys(currentGroup.members)
+        .filter(uid => uid !== user?.uid)
+        .map(uid => [uid, 'view' as const])
+    );
+  });
+
+  const toggleMemberPermission = (uid: string) => {
+    setMemberPermissions(prev => ({
+      ...prev,
+      [uid]: prev[uid] === 'edit' ? 'view' : 'edit',
+    }));
+  };
 
   const allActivities = getAllActivities(customActivities);
 
@@ -102,6 +117,7 @@ export default function NewTripPage() {
       activities,
       creatorId: user?.uid,
       shareWithGroup: currentGroup ? shareWithGroup : false,
+      ...(currentGroup && shareWithGroup ? { permissions: memberPermissions } : {}),
     });
 
     router.push(`/trip/${tripId}`);
@@ -315,6 +331,57 @@ export default function NewTripPage() {
                 </div>
                 {shareWithGroup && <Check className="h-5 w-5 text-blue-600 shrink-0" />}
               </button>
+
+              {/* Per-member permission picker */}
+              {shareWithGroup && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium">Rechten per lid</p>
+                  {Object.entries(currentGroup.members).map(([uid, member]) => {
+                    const isCreator = uid === user?.uid;
+                    const permission = isCreator ? 'owner' : (memberPermissions[uid] || 'view');
+
+                    return (
+                      <div key={uid} className="flex items-center justify-between py-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {member.photoURL ? (
+                            <img
+                              src={member.photoURL}
+                              alt=""
+                              className="h-6 w-6 rounded-full"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs">
+                              {member.displayName.charAt(0)}
+                            </div>
+                          )}
+                          <span className="text-sm truncate">{member.displayName}</span>
+                        </div>
+                        {isCreator ? (
+                          <span className="text-xs text-muted-foreground font-medium">Eigenaar</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleMemberPermission(uid)}
+                            className={cn(
+                              'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                              permission === 'edit'
+                                ? 'border-green-400 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300 dark:border-green-700'
+                                : 'border-border text-muted-foreground'
+                            )}
+                          >
+                            {permission === 'edit' ? (
+                              <><Pencil className="h-3 w-3" /> Bewerken</>
+                            ) : (
+                              <><Eye className="h-3 w-3" /> Bekijken</>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
