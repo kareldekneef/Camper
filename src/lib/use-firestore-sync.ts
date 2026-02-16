@@ -73,13 +73,14 @@ export function useFirestoreSync(user: User | null) {
   // Firestore to pick up changes made in other browsers/devices/group members.
   // CRITICAL: We cancel (not flush) any pending stale writes to avoid
   // overwriting Firestore with outdated local state.
+  // NOTE: We always check group membership from Firestore (not local state)
+  // because currentGroup is not persisted in localStorage and may be null
+  // even when the user belongs to a group.
   const refreshOnVisibility = useCallback(
     async (uid: string) => {
       if (isSyncingRef.current) return;
 
       // Cancel any pending stale writes — do NOT flush them.
-      // The fresh download will replace local state, making any
-      // pending write based on old state incorrect.
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
@@ -87,14 +88,14 @@ export function useFirestoreSync(user: User | null) {
 
       isSyncingRef.current = true;
       try {
-        const state = useAppStore.getState();
-        const group = state.currentGroup;
+        // Always check group membership from Firestore — don't trust local state
+        const groupId = await fetchUserGroupId(uid);
 
-        if (group) {
-          // Group mode: refresh group master data + own trips + shared trips
+        if (groupId) {
+          // Group mode: refresh group + master data + own trips + shared trips
           const [freshGroup, groupData, personalData] = await Promise.all([
-            fetchGroup(group.id),
-            downloadGroupMasterData(group.id),
+            fetchGroup(groupId),
+            downloadGroupMasterData(groupId),
             downloadFromFirestore(uid),
           ]);
 
@@ -102,7 +103,7 @@ export function useFirestoreSync(user: User | null) {
 
           const otherUids = Object.keys(freshGroup.members).filter((id) => id !== uid);
           const shared = otherUids.length > 0
-            ? await fetchSharedTrips(group.id, uid, otherUids)
+            ? await fetchSharedTrips(groupId, uid, otherUids)
             : { trips: [], tripItems: [] };
 
           useAppStore.setState({
@@ -110,8 +111,8 @@ export function useFirestoreSync(user: User | null) {
             categories: migrateCategories(groupData.categories),
             masterItems: groupData.masterItems,
             customActivities: groupData.customActivities,
-            trips: personalData?.trips ?? state.trips,
-            tripItems: personalData?.tripItems ?? state.tripItems,
+            trips: personalData?.trips ?? [],
+            tripItems: personalData?.tripItems ?? [],
             sharedTrips: shared.trips,
             sharedTripItems: shared.tripItems,
           });
@@ -125,6 +126,9 @@ export function useFirestoreSync(user: User | null) {
               customActivities: firestoreData.customActivities ?? [],
               trips: firestoreData.trips,
               tripItems: firestoreData.tripItems,
+              currentGroup: null,
+              sharedTrips: [],
+              sharedTripItems: [],
             });
           }
         }
