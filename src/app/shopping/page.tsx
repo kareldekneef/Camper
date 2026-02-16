@@ -61,7 +61,7 @@ export default function ShoppingPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<ShoppingFilter>('all');
-  const [activeOnly, setActiveOnly] = useState(false);
+  const [activeOnly, setActiveOnly] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('aggregated');
   const [collapsedTrips, setCollapsedTrips] = useState<Set<string>>(new Set());
 
