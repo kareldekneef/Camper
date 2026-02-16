@@ -75,6 +75,7 @@ export interface TripItem {
   id: string;
   tripId: string;
   masterItemId?: string;
+  sourceItemId?: string;  // links shopping copy back to original item (bidirectional sync)
   name: string;
   categoryId: string;
   checked: boolean;

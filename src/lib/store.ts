@@ -496,18 +496,38 @@ export const useAppStore = create<AppState>()(
 
       // Trip items
       toggleTripItem: (itemId) => {
+        const state = get();
+        const item = state.tripItems.find((ti) => ti.id === itemId);
+        if (!item) return;
+        const newChecked = !item.checked;
+
         set({
-          tripItems: get().tripItems.map((ti) =>
-            ti.id === itemId ? { ...ti, checked: !ti.checked } : ti
-          ),
+          tripItems: state.tripItems.map((ti) => {
+            if (ti.id === itemId) return { ...ti, checked: newChecked };
+            // Sync linked items: source → shopping copy or shopping copy → source
+            if (ti.sourceItemId === itemId || (item.sourceItemId && ti.id === item.sourceItemId)) {
+              return { ...ti, checked: newChecked };
+            }
+            return ti;
+          }),
         });
       },
 
       togglePurchased: (itemId) => {
+        const state = get();
+        const item = state.tripItems.find((ti) => ti.id === itemId);
+        if (!item) return;
+        const newPurchased = !item.purchased;
+
         set({
-          tripItems: get().tripItems.map((ti) =>
-            ti.id === itemId ? { ...ti, purchased: !ti.purchased } : ti
-          ),
+          tripItems: state.tripItems.map((ti) => {
+            if (ti.id === itemId) return { ...ti, purchased: newPurchased };
+            // Sync linked items
+            if (ti.sourceItemId === itemId || (item.sourceItemId && ti.id === item.sourceItemId)) {
+              return { ...ti, purchased: newPurchased };
+            }
+            return ti;
+          }),
         });
       },
 
@@ -538,16 +558,34 @@ export const useAppStore = create<AppState>()(
       },
 
       updateTripItem: (itemId, updates) => {
+        const state = get();
+        const item = state.tripItems.find((ti) => ti.id === itemId);
+        // Pick only the fields that should sync to linked items
+        const syncFields: Partial<TripItem> = {};
+        if ('checked' in updates) syncFields.checked = updates.checked;
+        if ('quantity' in updates) syncFields.quantity = updates.quantity;
+        if ('notes' in updates) syncFields.notes = updates.notes;
+        if ('purchased' in updates) syncFields.purchased = updates.purchased;
+        const hasSyncFields = Object.keys(syncFields).length > 0;
+
         set({
-          tripItems: get().tripItems.map((ti) =>
-            ti.id === itemId ? { ...ti, ...updates } : ti
-          ),
+          tripItems: state.tripItems.map((ti) => {
+            if (ti.id === itemId) return { ...ti, ...updates };
+            // Sync linked items
+            if (hasSyncFields && item && (ti.sourceItemId === itemId || (item.sourceItemId && ti.id === item.sourceItemId))) {
+              return { ...ti, ...syncFields };
+            }
+            return ti;
+          }),
         });
       },
 
       deleteTripItem: (itemId) => {
         set({
-          tripItems: get().tripItems.filter((ti) => ti.id !== itemId),
+          tripItems: get().tripItems
+            .filter((ti) => ti.id !== itemId)
+            // Clear broken sourceItemId links
+            .map((ti) => ti.sourceItemId === itemId ? { ...ti, sourceItemId: undefined } : ti),
         });
       },
 
@@ -606,11 +644,14 @@ export const useAppStore = create<AppState>()(
             {
               id: uuid(),
               tripId: item.tripId,
+              sourceItemId: item.id,
               name: item.name,
               categoryId: shoppingCat.id,
-              checked: false,
+              checked: item.checked,
+              purchased: item.purchased,
               isCustom: true,
               quantity: item.quantity ?? 1,
+              notes: item.notes,
               sortOrder: maxOrder + 1,
             },
           ],

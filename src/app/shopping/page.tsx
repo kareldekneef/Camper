@@ -60,7 +60,7 @@ export default function ShoppingPage() {
   const toggleTripItem = useAppStore((s) => s.toggleTripItem);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<ShoppingFilter>('todo');
+  const [filter, setFilter] = useState<ShoppingFilter>('all');
   const [activeOnly, setActiveOnly] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('aggregated');
   const [collapsedTrips, setCollapsedTrips] = useState<Set<string>>(new Set());
