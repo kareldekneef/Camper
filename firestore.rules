@@ -29,6 +29,19 @@ service cloud.firestore {
       }
     }
 
+    // Admin: full read access to all user docs + subcollections, delete subcollection docs
+    match /users/{userId} {
+      allow read: if request.auth != null
+        && request.auth.token.email == 'karleef@dekneef.be';
+
+      match /{subcollection}/{docId} {
+        allow read: if request.auth != null
+          && request.auth.token.email == 'karleef@dekneef.be';
+        allow delete: if request.auth != null
+          && request.auth.token.email == 'karleef@dekneef.be';
+      }
+    }
+
     // Groups
     match /groups/{groupId} {
       // Any authenticated user can read groups (needed for invite code lookup)

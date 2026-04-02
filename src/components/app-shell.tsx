@@ -16,11 +16,12 @@ const navItems = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const hideNav = pathname.startsWith('/admin');
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
-      <main className="flex-1 pb-20">{children}</main>
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <main className={hideNav ? 'flex-1' : 'flex-1 pb-20'}>{children}</main>
+      {!hideNav && <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="mx-auto flex max-w-lg items-center justify-around">
           {navItems.map((item) => {
             const isActive =
@@ -43,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </div>
-      </nav>
+      </nav>}
     </div>
   );
 }
