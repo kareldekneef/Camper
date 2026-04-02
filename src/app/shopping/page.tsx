@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
+import { updateSharedTripItem } from '@/lib/group-sync';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,6 +56,8 @@ interface TripGroup {
 export default function ShoppingPage() {
   const trips = useAppStore((s) => s.trips);
   const tripItems = useAppStore((s) => s.tripItems);
+  const sharedTrips = useAppStore((s) => s.sharedTrips);
+  const sharedTripItems = useAppStore((s) => s.sharedTripItems);
   const categories = useAppStore((s) => s.categories);
   const togglePurchased = useAppStore((s) => s.togglePurchased);
   const toggleTripItem = useAppStore((s) => s.toggleTripItem);
@@ -65,23 +68,83 @@ export default function ShoppingPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('aggregated');
   const [collapsedTrips, setCollapsedTrips] = useState<Set<string>>(new Set());
 
+  // Merge personal + shared trips/items
+  const allTrips = useMemo(() => [...trips, ...sharedTrips], [trips, sharedTrips]);
+  const allTripItems = useMemo(() => [...tripItems, ...sharedTripItems], [tripItems, sharedTripItems]);
+
+  // Shared trip lookup helpers for toggle routing
+  const sharedTripSet = useMemo(() => new Set(sharedTrips.map((t) => t.id)), [sharedTrips]);
+  const creatorByTripId = useMemo(
+    () => Object.fromEntries(sharedTrips.filter((t) => t.creatorId).map((t) => [t.id, t.creatorId!])),
+    [sharedTrips]
+  );
+
+  // Unified toggle handlers — route to local store or Firestore depending on trip ownership
+  const handleItemTogglePurchased = useCallback(async (item: TripItem) => {
+    if (sharedTripSet.has(item.tripId)) {
+      const creatorId = creatorByTripId[item.tripId];
+      if (!creatorId) return;
+      const newValue = !item.purchased;
+      useAppStore.setState((state) => ({
+        sharedTripItems: state.sharedTripItems.map((ti) =>
+          ti.id === item.id ? { ...ti, purchased: newValue } : ti
+        ),
+      }));
+      try {
+        await updateSharedTripItem(creatorId, item.id, { purchased: newValue });
+      } catch {
+        useAppStore.setState((state) => ({
+          sharedTripItems: state.sharedTripItems.map((ti) =>
+            ti.id === item.id ? { ...ti, purchased: !newValue } : ti
+          ),
+        }));
+      }
+    } else {
+      togglePurchased(item.id);
+    }
+  }, [sharedTripSet, creatorByTripId, togglePurchased]);
+
+  const handleItemTogglePacked = useCallback(async (item: TripItem) => {
+    if (sharedTripSet.has(item.tripId)) {
+      const creatorId = creatorByTripId[item.tripId];
+      if (!creatorId) return;
+      const newValue = !item.checked;
+      useAppStore.setState((state) => ({
+        sharedTripItems: state.sharedTripItems.map((ti) =>
+          ti.id === item.id ? { ...ti, checked: newValue } : ti
+        ),
+      }));
+      try {
+        await updateSharedTripItem(creatorId, item.id, { checked: newValue });
+      } catch {
+        useAppStore.setState((state) => ({
+          sharedTripItems: state.sharedTripItems.map((ti) =>
+            ti.id === item.id ? { ...ti, checked: !newValue } : ti
+          ),
+        }));
+      }
+    } else {
+      toggleTripItem(item.id);
+    }
+  }, [sharedTripSet, creatorByTripId, toggleTripItem]);
+
   // Filter trips based on active toggle
   const visibleTrips = useMemo(
-    () => activeOnly ? trips.filter((t) => t.status !== 'completed') : trips,
-    [trips, activeOnly]
+    () => activeOnly ? allTrips.filter((t) => t.status !== 'completed') : allTrips,
+    [allTrips, activeOnly]
   );
   const visibleTripIds = useMemo(
     () => new Set(visibleTrips.map((t) => t.id)),
     [visibleTrips]
   );
   const tripNameMap = useMemo(
-    () => Object.fromEntries(trips.map((t) => [t.id, t.name])),
-    [trips]
+    () => Object.fromEntries(allTrips.map((t) => [t.id, t.name])),
+    [allTrips]
   );
 
   const activeCount = useMemo(
-    () => trips.filter((t) => t.status !== 'completed').length,
-    [trips]
+    () => allTrips.filter((t) => t.status !== 'completed').length,
+    [allTrips]
   );
 
   // Get shopping category IDs
@@ -92,10 +155,10 @@ export default function ShoppingPage() {
 
   // All shopping items from visible trips
   const shoppingItems = useMemo(
-    () => tripItems.filter(
+    () => allTripItems.filter(
       (ti) => visibleTripIds.has(ti.tripId) && shoppingCategoryIds.has(ti.categoryId)
     ),
-    [tripItems, visibleTripIds, shoppingCategoryIds]
+    [allTripItems, visibleTripIds, shoppingCategoryIds]
   );
 
   // Aggregate shopping items across trips (group by name)
@@ -214,24 +277,24 @@ export default function ShoppingPage() {
     }).filter((group) => group.items.length > 0);
   }, [tripGroups, filter, searchQuery]);
 
-  // Toggle purchased on all sub-items
+  // Toggle purchased on all sub-items (personal + shared)
   const handleTogglePurchased = (agg: AggregatedItem) => {
     for (const item of agg.items) {
       if (agg.allPurchased) {
-        if (item.purchased) togglePurchased(item.id);
+        if (item.purchased) handleItemTogglePurchased(item);
       } else {
-        if (!item.purchased) togglePurchased(item.id);
+        if (!item.purchased) handleItemTogglePurchased(item);
       }
     }
   };
 
-  // Toggle packed on all sub-items
+  // Toggle packed on all sub-items (personal + shared)
   const handleTogglePacked = (agg: AggregatedItem) => {
     for (const item of agg.items) {
       if (agg.allPacked) {
-        if (item.checked) toggleTripItem(item.id);
+        if (item.checked) handleItemTogglePacked(item);
       } else {
-        if (!item.checked) toggleTripItem(item.id);
+        if (!item.checked) handleItemTogglePacked(item);
       }
     }
   };
@@ -253,7 +316,7 @@ export default function ShoppingPage() {
   const totalPurchased = aggregatedItems.filter((i) => i.allPurchased && !i.allPacked).length;
   const totalPacked = aggregatedItems.filter((i) => i.allPacked).length;
 
-  if (trips.length === 0) {
+  if (allTrips.length === 0) {
     return (
       <div className="mx-auto max-w-lg px-4 pt-6">
         <div className="mb-6">
@@ -506,8 +569,8 @@ export default function ShoppingPage() {
                         <SingleItemRow
                           key={item.id}
                           item={item}
-                          onTogglePurchased={() => togglePurchased(item.id)}
-                          onTogglePacked={() => toggleTripItem(item.id)}
+                          onTogglePurchased={() => handleItemTogglePurchased(item)}
+                          onTogglePacked={() => handleItemTogglePacked(item)}
                         />
                       ))}
                     </div>
