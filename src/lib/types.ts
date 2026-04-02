@@ -78,6 +78,7 @@ export function getTripPermission(trip: Trip, uid: string): 'owner' | 'edit' | '
   if (trip.creatorId === uid) return 'owner';
   if (trip.permissions?.[uid]) return trip.permissions[uid];
   if (trip.sharedWith?.includes(uid)) return 'view'; // backward compat
+  if (trip.groupId) return 'view'; // group member with implicit access (e.g. joined after trip was created)
   return null;
 }
 

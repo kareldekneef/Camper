@@ -103,9 +103,7 @@ export async function fetchSharedTrips(
         )
       );
 
-      const memberTrips = tripsSnap.docs
-        .map((d) => d.data() as Trip)
-        .filter((t) => t.sharedWith?.includes(currentUid));
+      const memberTrips = tripsSnap.docs.map((d) => d.data() as Trip);
 
       if (memberTrips.length === 0) continue;
 

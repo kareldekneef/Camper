@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -62,6 +62,19 @@ export default function NewTripPage() {
         .map(uid => [uid, 'view' as const])
     );
   });
+
+  // If currentGroup loaded after mount (Firestore sync), initialize permissions reactively
+  useEffect(() => {
+    if (!currentGroup || !user) return;
+    setMemberPermissions(prev => {
+      if (Object.keys(prev).length > 0) return prev;
+      return Object.fromEntries(
+        Object.keys(currentGroup.members)
+          .filter(uid => uid !== user.uid)
+          .map(uid => [uid, 'view' as const])
+      );
+    });
+  }, [currentGroup, user]);
 
   const toggleMemberPermission = (uid: string) => {
     setMemberPermissions(prev => ({
