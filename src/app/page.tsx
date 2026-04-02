@@ -279,7 +279,7 @@ export default function HomePage() {
         </Button>
       </Link>
 
-      {trips.length === 0 ? (
+      {trips.length === 0 && !(currentGroup && sharedTrips.length > 0) ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
           <p className="text-4xl mb-2">🏕️</p>
           <p className="text-muted-foreground">
