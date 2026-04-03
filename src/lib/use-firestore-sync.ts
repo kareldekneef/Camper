@@ -39,6 +39,8 @@ export function useFirestoreSync(user: User | null) {
   // Stable sync function for writing changes to Firestore
   const syncToFirestore = useCallback(
     async (uid: string) => {
+      if (isSyncingRef.current) return; // don't overwrite a concurrent download
+      isSyncingRef.current = true;
       try {
         const state = useAppStore.getState();
         const group = state.currentGroup;
@@ -64,6 +66,8 @@ export function useFirestoreSync(user: User | null) {
         }
       } catch (error) {
         console.error('Firestore sync write failed:', error);
+      } finally {
+        isSyncingRef.current = false;
       }
     },
     []
@@ -268,7 +272,7 @@ export function useFirestoreSync(user: User | null) {
 
       debounceTimerRef.current = setTimeout(() => {
         syncToFirestore(user.uid);
-      }, 2000);
+      }, 300);
     });
 
     return () => {
