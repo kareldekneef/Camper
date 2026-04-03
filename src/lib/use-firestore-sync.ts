@@ -71,8 +71,6 @@ export function useFirestoreSync(user: User | null) {
 
   // Refresh all data when app becomes visible — downloads fresh data from
   // Firestore to pick up changes made in other browsers/devices/group members.
-  // CRITICAL: We cancel (not flush) any pending stale writes to avoid
-  // overwriting Firestore with outdated local state.
   // NOTE: We always check group membership from Firestore (not local state)
   // because currentGroup is not persisted in localStorage and may be null
   // even when the user belongs to a group.
@@ -80,10 +78,14 @@ export function useFirestoreSync(user: User | null) {
     async (uid: string) => {
       if (isSyncingRef.current) return;
 
-      // Cancel any pending stale writes — do NOT flush them.
+      // Flush any pending local changes to Firestore BEFORE downloading fresh
+      // data. This prevents locally modified items (e.g. marking purchased
+      // while shopping and switching apps) from being overwritten by a stale
+      // Firestore download.
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
+        await syncToFirestore(uid);
       }
 
       isSyncingRef.current = true;
