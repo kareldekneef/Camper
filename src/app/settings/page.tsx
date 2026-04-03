@@ -12,7 +12,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Download, Upload, Trash2, RotateCcw, Sun, Moon, Monitor, Cloud, LogOut } from 'lucide-react';
+import { Download, Upload, Trash2, RotateCcw, Sun, Moon, Monitor, Cloud, LogOut, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
 import { defaultCategories, defaultMasterItems } from '@/lib/seed-data';
 import { useTheme } from '@/components/theme-provider';
 import { useAuth } from '@/lib/auth-context';
@@ -173,6 +174,14 @@ export default function SettingsPage() {
                   <LogOut className="h-4 w-4" />
                   Uitloggen
                 </Button>
+                {user.email === 'karel@dekneef.be' && (
+                  <Link href="/admin">
+                    <Button variant="outline" className="w-full justify-start gap-2">
+                      <ShieldAlert className="h-4 w-4 text-destructive" />
+                      Admin Panel
+                    </Button>
+                  </Link>
+                )}
               </div>
             ) : (
               <div className="space-y-3">

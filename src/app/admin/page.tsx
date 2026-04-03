@@ -28,11 +28,13 @@ import {
   Package,
   RotateCcw,
   ShieldAlert,
+  ArrowLeft,
 } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-const ADMIN_EMAIL = 'karleef@dekneef.be';
+const ADMIN_EMAIL = 'karel@dekneef.be';
 
 type ConfirmAction =
   | { type: 'deleteTrip'; uid: string; tripId: string; tripName: string; userName: string }
@@ -139,8 +141,13 @@ export default function AdminPage() {
   return (
     <div className="mx-auto max-w-lg px-4 pt-6 pb-10">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+      <div className="mb-6 flex items-center gap-3">
+        <Link href="/settings">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold">Admin Panel</h1>
           <p className="text-sm text-muted-foreground">CamperPack beheer</p>
         </div>
