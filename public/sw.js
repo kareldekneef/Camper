@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'camperpack-v2';
+const CACHE_VERSION = 'camperpack-v3';
 const PRECACHE_URLS = [
   '/',
   '/trip/new',
