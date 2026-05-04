@@ -28,7 +28,7 @@ export async function syncTripItemsStatus(
       if (!item) continue;
       batch.set(
         doc(db, 'users', uid, 'tripItems', itemId),
-        stripUndefined({ checked: item.checked, purchased: item.purchased, skipped: item.skipped, quantity: item.quantity, notes: item.notes }),
+        stripUndefined({ checked: item.checked, purchased: item.purchased, skipped: item.skipped, quantity: item.quantity, notes: item.notes, weight: item.weight }),
         { merge: true }
       );
     }

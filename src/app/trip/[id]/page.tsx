@@ -92,6 +92,8 @@ export default function TripDetailPage({
   const copyItemToShopping = useAppStore((s) => s.copyItemToShopping);
   const togglePurchased = useAppStore((s) => s.togglePurchased);
   const skipTripItem = useAppStore((s) => s.skipTripItem);
+  const masterItems = useAppStore((s) => s.masterItems);
+  const updateMasterItem = useAppStore((s) => s.updateMasterItem);
   const currentGroup = useAppStore((s) => s.currentGroup);
   const { user } = useAuth();
 
@@ -522,6 +524,11 @@ export default function TripDetailPage({
                             onUpdateWeight={(weight) =>
                               updateTripItem(item.id, { weight })
                             }
+                            onSaveWeightToMaster={
+                              item.masterItemId
+                                ? (weight) => updateMasterItem(item.masterItemId!, { weight })
+                                : undefined
+                            }
                             onSaveToMaster={
                               item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
                             }
@@ -556,6 +563,11 @@ export default function TripDetailPage({
                         }
                         onUpdateWeight={(weight) =>
                           updateTripItem(item.id, { weight })
+                        }
+                        onSaveWeightToMaster={
+                          item.masterItemId
+                            ? (weight) => updateMasterItem(item.masterItemId!, { weight })
+                            : undefined
                         }
                         onSaveToMaster={
                           item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
@@ -788,6 +800,7 @@ function ItemRow({
   onUpdateNotes,
   onUpdateQuantity,
   onUpdateWeight,
+  onSaveWeightToMaster,
   onSaveToMaster,
   onCopyToShopping,
   onTogglePurchased,
@@ -800,6 +813,7 @@ function ItemRow({
   onUpdateNotes: (notes: string) => void;
   onUpdateQuantity: (quantity: number) => void;
   onUpdateWeight: (weight: number | undefined) => void;
+  onSaveWeightToMaster?: (weight: number) => void;
   onSaveToMaster?: () => void;
   onCopyToShopping?: () => void;
   onTogglePurchased?: () => void;
@@ -808,6 +822,8 @@ function ItemRow({
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes || '');
   const [weightInput, setWeightInput] = useState(item.weight ? String(item.weight) : '');
+  const [showSaveWeightPrompt, setShowSaveWeightPrompt] = useState(false);
+  const [pendingWeight, setPendingWeight] = useState<number | undefined>(undefined);
   const [swipeX, setSwipeX] = useState(0);  // positive = right swipe, negative = left swipe
   const [swiping, setSwiping] = useState(false);
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -1027,14 +1043,45 @@ function ItemRow({
                       onChange={(e) => setWeightInput(e.target.value)}
                       onBlur={() => {
                         const val = parseInt(weightInput) || 0;
-                        onUpdateWeight(val > 0 ? val : undefined);
+                        const newWeight = val > 0 ? val : undefined;
+                        onUpdateWeight(newWeight);
                         setWeightInput(val > 0 ? String(val) : '');
+                        if (onSaveWeightToMaster && newWeight && newWeight !== item.weight) {
+                          setPendingWeight(newWeight);
+                          setShowSaveWeightPrompt(true);
+                        }
                       }}
                       className="w-20 rounded border border-input bg-background px-2 py-0.5 text-sm text-right"
                     />
                     <span className="text-xs text-muted-foreground">g</span>
                   </div>
                 </div>
+                {showSaveWeightPrompt && pendingWeight && (
+                  <div className="px-3 py-2 text-xs bg-muted/50 border-t border-b">
+                    <p className="mb-1.5 text-muted-foreground">Ook bijwerken in standaardlijst?</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          onSaveWeightToMaster?.(pendingWeight);
+                          setShowSaveWeightPrompt(false);
+                          setShowActions(false);
+                        }}
+                        className="flex-1 rounded border border-primary bg-primary/10 text-primary py-1 font-medium hover:bg-primary/20"
+                      >
+                        Ja
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowSaveWeightPrompt(false);
+                          setShowActions(false);
+                        }}
+                        className="flex-1 rounded border py-1 hover:bg-accent"
+                      >
+                        Nee
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="border-t my-1" />
                 <button
                   onClick={() => {

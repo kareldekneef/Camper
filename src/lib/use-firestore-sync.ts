@@ -65,7 +65,8 @@ export function useFirestoreSync(user: User | null) {
           prev.purchased !== newItem.purchased ||
           prev.skipped !== newItem.skipped ||
           (prev.quantity ?? 1) !== (newItem.quantity ?? 1) ||
-          (prev.notes ?? '') !== (newItem.notes ?? '')
+          (prev.notes ?? '') !== (newItem.notes ?? '') ||
+          (prev.weight ?? 0) !== (newItem.weight ?? 0)
         ) {
           dirtyItemIdsRef.current.add(id);
         }
@@ -360,6 +361,8 @@ export function useFirestoreSync(user: User | null) {
           resetTripItemBaseline();
           prevHashRef.current = hashState(useAppStore.getState());
           isSyncingRef.current = false;
+          // Apply default weights to items missing them — triggers subscriber → queues sync
+          useAppStore.getState().applyDefaultWeights();
         }
       }
     }

@@ -48,6 +48,7 @@ interface AppState {
   deleteMasterItem: (id: string) => void;
   reorderMasterItems: (categoryId: string, orderedIds: string[]) => void;
   syncWithDefaultList: () => number; // returns count of added items
+  applyDefaultWeights: () => { masterCount: number; tripCount: number };
 
   // Custom Activities
   addCustomActivity: (name: string, icon: string) => void;
@@ -238,6 +239,41 @@ export const useAppStore = create<AppState>()(
             return index >= 0 ? { ...item, sortOrder: index } : item;
           }),
         });
+      },
+
+      applyDefaultWeights: () => {
+        const state = get();
+        const weightMap = new Map<string, number>();
+        for (const di of defaultMasterItems) {
+          if (di.weight) weightMap.set(di.name.toLowerCase(), di.weight);
+        }
+
+        let masterCount = 0;
+        const updatedMasterItems = state.masterItems.map((mi) => {
+          if (mi.weight) return mi;
+          const w = weightMap.get(mi.name.toLowerCase());
+          if (w) { masterCount++; return { ...mi, weight: w }; }
+          return mi;
+        });
+
+        const masterIdWeightMap = new Map<string, number>();
+        for (const mi of updatedMasterItems) {
+          if (mi.weight) masterIdWeightMap.set(mi.id, mi.weight);
+        }
+
+        let tripCount = 0;
+        const updatedTripItems = state.tripItems.map((ti) => {
+          if (ti.weight) return ti;
+          const w = (ti.masterItemId ? masterIdWeightMap.get(ti.masterItemId) : undefined)
+            ?? weightMap.get(ti.name.toLowerCase());
+          if (w) { tripCount++; return { ...ti, weight: w }; }
+          return ti;
+        });
+
+        if (masterCount > 0 || tripCount > 0) {
+          set({ masterItems: updatedMasterItems, tripItems: updatedTripItems });
+        }
+        return { masterCount, tripCount };
       },
 
       syncWithDefaultList: () => {
