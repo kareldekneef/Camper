@@ -105,6 +105,7 @@ export default function TripDetailPage({
   const [newItemQuantity, setNewItemQuantity] = useState(1);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('default');
+  const [showSkipped, setShowSkipped] = useState(false);
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
   const [shareStatus, setShareStatus] = useState<string>('');
@@ -172,6 +173,11 @@ export default function TripDetailPage({
     displayItems = tripItems.filter((ti) => ti.categoryId === shoppingCategoryId && !ti.checked);
   } else if (filterMode === 'forgotten') {
     displayItems = tripItems.filter((ti) => !ti.checked && !ti.skipped);
+  }
+
+  // Hide skipped items unless explicitly shown
+  if (!showSkipped) {
+    displayItems = displayItems.filter((ti) => !ti.skipped);
   }
 
   // Apply search
@@ -430,7 +436,7 @@ export default function TripDetailPage({
       </div>
 
       {/* Sort mode */}
-      <div className="mb-4 flex items-center gap-1.5">
+      <div className="mb-3 flex items-center gap-1.5">
         <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         <span className="text-xs text-muted-foreground mr-1">Volgorde:</span>
         <SortButton
@@ -452,6 +458,25 @@ export default function TripDetailPage({
           label="In te pakken"
         />
       </div>
+
+      {/* Show/hide skipped items */}
+      {totalSkipped > 0 && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowSkipped((v) => !v)}
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <div className={cn(
+              'h-4 w-4 rounded border-2 flex items-center justify-center transition-colors',
+              showSkipped ? 'border-primary bg-primary' : 'border-muted-foreground/40'
+            )}>
+              {showSkipped && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+            </div>
+            <Ban className="h-3 w-3" />
+            <span>Toon "niet nodig" ({totalSkipped})</span>
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div className="mb-4 relative">
