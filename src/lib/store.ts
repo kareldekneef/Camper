@@ -87,6 +87,7 @@ interface AppState {
   // Trip items
   toggleTripItem: (itemId: string) => void;
   togglePurchased: (itemId: string) => void;
+  skipTripItem: (itemId: string) => void;
   addTripItem: (tripId: string, name: string, categoryId: string, quantity?: number) => void;
   updateTripItem: (itemId: string, updates: Partial<TripItem>) => void;
   deleteTripItem: (itemId: string) => void;
@@ -531,6 +532,20 @@ export const useAppStore = create<AppState>()(
             if (ti.sourceItemId === itemId || (item.sourceItemId && ti.id === item.sourceItemId)) {
               return { ...ti, purchased: newPurchased };
             }
+            return ti;
+          }),
+        });
+      },
+
+      skipTripItem: (itemId) => {
+        const state = get();
+        const item = state.tripItems.find((ti) => ti.id === itemId);
+        if (!item) return;
+        const newSkipped = !item.skipped;
+
+        set({
+          tripItems: state.tripItems.map((ti) => {
+            if (ti.id === itemId) return { ...ti, skipped: newSkipped, checked: false };
             return ti;
           }),
         });

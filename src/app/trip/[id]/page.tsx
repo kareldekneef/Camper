@@ -34,6 +34,7 @@ import {
   Trash2,
   CheckCircle2,
   Circle,
+  Ban,
   X,
   RotateCcw,
   Edit2,
@@ -90,6 +91,7 @@ export default function TripDetailPage({
   const reorderTripItems = useAppStore((s) => s.reorderTripItems);
   const copyItemToShopping = useAppStore((s) => s.copyItemToShopping);
   const togglePurchased = useAppStore((s) => s.togglePurchased);
+  const skipTripItem = useAppStore((s) => s.skipTripItem);
   const currentGroup = useAppStore((s) => s.currentGroup);
   const { user } = useAuth();
 
@@ -163,11 +165,11 @@ export default function TripDetailPage({
   // Apply filter mode
   let displayItems = tripItems;
   if (filterMode === 'unchecked') {
-    displayItems = tripItems.filter((ti) => !ti.checked);
+    displayItems = tripItems.filter((ti) => !ti.checked && !ti.skipped);
   } else if (filterMode === 'shopping') {
     displayItems = tripItems.filter((ti) => ti.categoryId === shoppingCategoryId && !ti.checked);
   } else if (filterMode === 'forgotten') {
-    displayItems = tripItems.filter((ti) => !ti.checked);
+    displayItems = tripItems.filter((ti) => !ti.checked && !ti.skipped);
   }
 
   // Apply search
@@ -184,11 +186,13 @@ export default function TripDetailPage({
     groupedItems.set(item.categoryId, existing);
   }
 
-  // Sort items within each category based on sort mode
+  // Sort items within each category based on sort mode; skipped always last
   for (const [catId, items] of groupedItems) {
     groupedItems.set(
       catId,
       items.sort((a, b) => {
+        // Skipped items sink to bottom in all sort modes
+        if (!!a.skipped !== !!b.skipped) return a.skipped ? 1 : -1;
         if (sortMode === 'alpha') {
           return a.name.localeCompare(b.name, 'nl');
         }
@@ -222,8 +226,9 @@ export default function TripDetailPage({
     });
 
   const totalChecked = tripItems.filter((ti) => ti.checked).length;
-  const totalItems = tripItems.length;
-  const totalForgotten = tripItems.filter((ti) => !ti.checked).length;
+  const totalSkipped = tripItems.filter((ti) => ti.skipped).length;
+  const totalItems = tripItems.length - totalSkipped;
+  const totalForgotten = tripItems.filter((ti) => !ti.checked && !ti.skipped).length;
   const progress = totalItems > 0 ? (totalChecked / totalItems) * 100 : 0;
 
   const handleAddItem = () => {
@@ -453,6 +458,7 @@ export default function TripDetailPage({
         {sortedCategories.map((category) => {
           const items = groupedItems.get(category.id) || [];
           const catChecked = items.filter((i) => i.checked).length;
+          const catActive = items.filter((i) => !i.skipped).length;
           const isCollapsed = collapsedCategories.has(category.id);
           const itemIds = items.map((i) => i.id);
 
@@ -470,7 +476,7 @@ export default function TripDetailPage({
                 <span className="text-base">{category.icon}</span>
                 <span className="flex-1 font-medium text-sm">{category.name}</span>
                 <Badge variant="secondary" className="text-xs">
-                  {catChecked}/{items.length}
+                  {catChecked}/{catActive}
                 </Badge>
               </button>
 
@@ -488,6 +494,7 @@ export default function TripDetailPage({
                           <ItemRow
                             item={item}
                             onToggle={() => toggleTripItem(item.id)}
+                            onSkip={() => skipTripItem(item.id)}
                             onDelete={() => handleDeleteTripItem(item)}
                             onUpdateNotes={(notes) =>
                               updateTripItem(item.id, { notes })
@@ -519,6 +526,7 @@ export default function TripDetailPage({
                         item={item}
                         hideDragHandle
                         onToggle={() => toggleTripItem(item.id)}
+                        onSkip={() => skipTripItem(item.id)}
                         onDelete={() => handleDeleteTripItem(item)}
                         onUpdateNotes={(notes) =>
                           updateTripItem(item.id, { notes })
@@ -747,11 +755,12 @@ function SortButton({
   );
 }
 
-// Item row with swipe-to-check, notes, quantity, and drag handle support
+// Item row with swipe-to-check (right) / swipe-to-skip (left), notes, quantity, and drag handle support
 function ItemRow({
   item,
   hideDragHandle,
   onToggle,
+  onSkip,
   onDelete,
   onUpdateNotes,
   onUpdateQuantity,
@@ -762,6 +771,7 @@ function ItemRow({
   item: TripItem;
   hideDragHandle?: boolean;
   onToggle: () => void;
+  onSkip: () => void;
   onDelete: () => void;
   onUpdateNotes: (notes: string) => void;
   onUpdateQuantity: (quantity: number) => void;
@@ -772,7 +782,7 @@ function ItemRow({
   const [showActions, setShowActions] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes || '');
-  const [swipeX, setSwipeX] = useState(0);
+  const [swipeX, setSwipeX] = useState(0);  // positive = right swipe, negative = left swipe
   const [swiping, setSwiping] = useState(false);
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const swipeThreshold = 70;
@@ -803,47 +813,75 @@ function ItemRow({
       return;
     }
     if (Math.abs(dx) > 10) setSwiping(true);
-    // Only allow right swipe (positive dx), capped at 100px
-    setSwipeX(Math.max(0, Math.min(100, dx)));
+    // Clamp: right swipe [0, 100], left swipe [-100, 0]
+    setSwipeX(Math.max(-100, Math.min(100, dx)));
   }, [swiping]);
 
   const handleTouchEnd = useCallback(() => {
     if (swipeX >= swipeThreshold) {
       onToggle();
+    } else if (swipeX <= -swipeThreshold) {
+      onSkip();
     }
     setSwipeX(0);
     setSwiping(false);
     touchStartRef.current = null;
-  }, [swipeX, onToggle]);
+  }, [swipeX, onToggle, onSkip]);
 
-  const swipeProgress = Math.min(swipeX / swipeThreshold, 1);
+  const rightProgress = Math.min(swipeX / swipeThreshold, 1);   // 0→1 for right swipe
+  const leftProgress = Math.min(-swipeX / swipeThreshold, 1);   // 0→1 for left swipe
 
   return (
     <div className={cn("border-b last:border-b-0 relative", !showActions && "overflow-hidden")} style={showActions ? { zIndex: 30 } : undefined}>
-      {/* Swipe reveal background */}
-      <div
-        className={cn(
-          'absolute inset-y-0 left-0 flex items-center pl-4 transition-opacity',
-          item.checked
-            ? 'bg-orange-100 dark:bg-orange-950/50'
-            : 'bg-green-100 dark:bg-green-950/50'
-        )}
-        style={{ width: `${swipeX}px`, opacity: swipeProgress }}
-      >
-        {swipeProgress >= 1 && (
-          item.checked ? (
-            <Circle className="h-5 w-5 text-orange-600" />
-          ) : (
-            <CheckCircle2 className="h-5 w-5 text-green-600" />
-          )
-        )}
-      </div>
+      {/* Right-swipe reveal (check/uncheck) */}
+      {swipeX > 0 && (
+        <div
+          className={cn(
+            'absolute inset-y-0 left-0 flex items-center pl-4',
+            item.checked
+              ? 'bg-orange-100 dark:bg-orange-950/50'
+              : 'bg-green-100 dark:bg-green-950/50'
+          )}
+          style={{ width: `${swipeX}px`, opacity: rightProgress }}
+        >
+          {rightProgress >= 1 && (
+            item.checked ? (
+              <Circle className="h-5 w-5 text-orange-600" />
+            ) : (
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+            )
+          )}
+        </div>
+      )}
+      {/* Left-swipe reveal (skip / un-skip) */}
+      {swipeX < 0 && (
+        <div
+          className={cn(
+            'absolute inset-y-0 right-0 flex items-center pr-4',
+            item.skipped
+              ? 'bg-blue-50 dark:bg-blue-950/50'
+              : 'bg-gray-100 dark:bg-gray-800/50'
+          )}
+          style={{ width: `${-swipeX}px`, opacity: leftProgress }}
+        >
+          {leftProgress >= 1 && (
+            item.skipped ? (
+              <Circle className="h-5 w-5 text-blue-500" />
+            ) : (
+              <Ban className="h-5 w-5 text-gray-500" />
+            )
+          )}
+        </div>
+      )}
 
       <div
-        className="flex items-center gap-1 px-2 py-2.5 bg-background relative"
+        className={cn(
+          "flex items-center gap-1 px-2 py-2.5 bg-background relative",
+          item.skipped && "opacity-50"
+        )}
         style={{
-          transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined,
-          transition: swipeX > 0 || swiping ? (swiping ? 'none' : 'transform 200ms ease-out') : undefined,
+          transform: swipeX !== 0 ? `translateX(${swipeX}px)` : undefined,
+          transition: swipeX !== 0 || swiping ? (swiping ? 'none' : 'transform 200ms ease-out') : undefined,
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -851,10 +889,12 @@ function ItemRow({
       >
         {!hideDragHandle && <DragHandle className="shrink-0 p-1" />}
         <button
-          onClick={swiping ? undefined : onToggle}
+          onClick={swiping ? undefined : (item.skipped ? onSkip : onToggle)}
           className="flex-1 flex items-center gap-3 min-h-[44px] text-left"
         >
-          {item.checked ? (
+          {item.skipped ? (
+            <Ban className="h-5 w-5 text-muted-foreground shrink-0" />
+          ) : item.checked ? (
             <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
           ) : (
             <Circle className="h-5 w-5 text-muted-foreground shrink-0" />
@@ -864,7 +904,7 @@ function ItemRow({
               <span
                 className={cn(
                   'text-sm',
-                  item.checked && 'line-through text-muted-foreground'
+                  (item.checked || item.skipped) && 'line-through text-muted-foreground'
                 )}
               >
                 {item.name}
@@ -886,8 +926,13 @@ function ItemRow({
               custom
             </Badge>
           )}
+          {item.skipped && (
+            <Badge variant="outline" className="text-[10px] shrink-0 border-gray-300 text-gray-500">
+              Niet nodig
+            </Badge>
+          )}
         </button>
-        {onTogglePurchased && (
+        {!item.skipped && onTogglePurchased && (
           <button
             onClick={(e) => { e.stopPropagation(); onTogglePurchased(); }}
             className="shrink-0"

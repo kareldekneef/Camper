@@ -91,6 +91,7 @@ export interface TripItem {
   categoryId: string;
   checked: boolean;
   purchased?: boolean;  // for shopping items: not done → purchased → checked (packed)
+  skipped?: boolean;    // "niet nodig" — dismissed for this trip without packing
   notes?: string;
   isCustom: boolean;
   quantity?: number;    // calculated or manually adjusted (defaults to 1)

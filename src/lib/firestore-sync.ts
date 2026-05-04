@@ -9,6 +9,33 @@ import { db } from './firebase';
 import { useAppStore } from './store';
 import { Category, CustomActivity, MasterItem, Trip, TripItem } from './types';
 
+// --- Surgical status update: only write checked/purchased/quantity/notes for specific items ---
+// Uses set+merge so it won't overwrite structural fields (name, categoryId, etc.)
+// and won't clobber changes made by other group members on different items.
+
+export async function syncTripItemsStatus(
+  uid: string,
+  items: TripItem[],
+  itemIds: Set<string>
+): Promise<void> {
+  if (itemIds.size === 0) return;
+  const itemIdArray = Array.from(itemIds);
+  for (let i = 0; i < itemIdArray.length; i += 499) {
+    const chunk = itemIdArray.slice(i, i + 499);
+    const batch = writeBatch(db);
+    for (const itemId of chunk) {
+      const item = items.find((it) => it.id === itemId);
+      if (!item) continue;
+      batch.set(
+        doc(db, 'users', uid, 'tripItems', itemId),
+        stripUndefined({ checked: item.checked, purchased: item.purchased, skipped: item.skipped, quantity: item.quantity, notes: item.notes }),
+        { merge: true }
+      );
+    }
+    await batch.commit();
+  }
+}
+
 type CollectionName = 'categories' | 'masterItems' | 'trips' | 'tripItems' | 'customActivities';
 
 // Firestore rejects `undefined` values in documents. Strip them before writing.
