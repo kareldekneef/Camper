@@ -76,6 +76,7 @@ export default function MasterListPage() {
   const [newItemMinPeople, setNewItemMinPeople] = useState<number>(0);
   const [newItemQuantity, setNewItemQuantity] = useState(1);
   const [newItemPerPerson, setNewItemPerPerson] = useState(false);
+  const [newItemWeight, setNewItemWeight] = useState<number>(0);
 
   // Add category form state
   const [newCatName, setNewCatName] = useState('');
@@ -186,6 +187,7 @@ export default function MasterListPage() {
     setNewItemMinPeople(0);
     setNewItemQuantity(1);
     setNewItemPerPerson(false);
+    setNewItemWeight(0);
   };
 
   const handleAddItem = () => {
@@ -200,6 +202,7 @@ export default function MasterListPage() {
       },
       quantity: newItemQuantity > 1 ? newItemQuantity : undefined,
       perPerson: newItemPerPerson || undefined,
+      weight: newItemWeight > 0 ? newItemWeight : undefined,
     });
     resetItemForm();
     setShowAddItem(false);
@@ -213,6 +216,7 @@ export default function MasterListPage() {
       conditions: editingItem.conditions,
       quantity: editingItem.quantity,
       perPerson: editingItem.perPerson,
+      weight: editingItem.weight,
     });
     setEditingItem(null);
   };
@@ -340,6 +344,21 @@ export default function MasterListPage() {
                     {newItemPerPerson ? 'Ja — vermenigvuldigt met aantal personen' : 'Nee — vast aantal'}
                   </span>
                 </button>
+              </div>
+              <div className="space-y-2">
+                <Label>Gewicht per stuk (gram, optioneel)</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    value={newItemWeight || ''}
+                    onChange={(e) => setNewItemWeight(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-24 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                  />
+                  <span className="text-sm text-muted-foreground">gram</span>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Weer (optioneel)</Label>
@@ -608,6 +627,11 @@ export default function MasterListPage() {
                                       {item.perPerson ? `${qty} p.p.` : `×${qty}`}
                                     </Badge>
                                   )}
+                                  {item.weight && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5">
+                                      {item.weight >= 1000 ? `${(item.weight / 1000).toFixed(1)}kg` : `${item.weight}g`}
+                                    </Badge>
+                                  )}
                                   {item.conditions.weather && item.conditions.weather.length > 0 && (
                                     <Badge variant="outline" className="text-[10px]">
                                       {item.conditions.weather.join(', ')}
@@ -825,6 +849,21 @@ export default function MasterListPage() {
                   {editingItem.perPerson ? 'Ja — vermenigvuldigt' : 'Nee — vast aantal'}
                 </span>
               </button>
+              <div className="space-y-2">
+                <Label>Gewicht per stuk (gram, optioneel)</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    value={editingItem.weight || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, weight: Math.max(0, parseInt(e.target.value) || 0) || undefined })}
+                    className="w-24 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                  />
+                  <span className="text-sm text-muted-foreground">gram</span>
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label>Weer</Label>
                 <div className="flex flex-wrap gap-2">

@@ -22,6 +22,7 @@ export interface MasterItem {
   quantity?: number;    // default quantity (defaults to 1)
   perPerson?: boolean;  // if true, multiply by peopleCount
   sortOrder?: number;   // order within category
+  weight?: number;      // grams per unit
 }
 
 export interface Category {
@@ -96,4 +97,5 @@ export interface TripItem {
   isCustom: boolean;
   quantity?: number;    // calculated or manually adjusted (defaults to 1)
   sortOrder?: number;   // order within category
+  weight?: number;      // grams per unit (copied from master item)
 }

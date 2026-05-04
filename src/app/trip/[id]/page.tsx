@@ -231,6 +231,17 @@ export default function TripDetailPage({
   const totalForgotten = tripItems.filter((ti) => !ti.checked && !ti.skipped).length;
   const progress = totalItems > 0 ? (totalChecked / totalItems) * 100 : 0;
 
+  const activeItems = tripItems.filter((ti) => !ti.skipped);
+  const hasWeightData = activeItems.some((ti) => ti.weight);
+  const packedWeight = activeItems
+    .filter((ti) => ti.checked)
+    .reduce((sum, ti) => sum + (ti.weight ?? 0) * (ti.quantity ?? 1), 0);
+  const totalWeight = activeItems
+    .reduce((sum, ti) => sum + (ti.weight ?? 0) * (ti.quantity ?? 1), 0);
+
+  const formatWeight = (grams: number) =>
+    grams >= 1000 ? `${(grams / 1000).toFixed(1)} kg` : `${grams} g`;
+
   const handleAddItem = () => {
     if (!newItemName.trim() || !newItemCategory) return;
     addTripItem(id, newItemName.trim(), newItemCategory, newItemQuantity);
@@ -358,6 +369,12 @@ export default function TripDetailPage({
           <span className="text-muted-foreground">{Math.round(progress)}%</span>
         </div>
         <Progress value={progress} className="h-3" />
+        {hasWeightData && (
+          <div className="flex justify-between text-xs text-muted-foreground pt-0.5">
+            <span>Gewicht ingepakt: <span className="font-medium text-foreground">{formatWeight(packedWeight)}</span></span>
+            <span>Totaal: {formatWeight(totalWeight)}</span>
+          </div>
+        )}
       </div>
 
       {/* Trip notes */}

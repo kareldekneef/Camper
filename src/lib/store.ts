@@ -318,6 +318,7 @@ export const useAppStore = create<AppState>()(
             isCustom: false,
             quantity: calculateQuantity(mi, params.peopleCount),
             sortOrder: sortCounter++,
+            ...(mi.weight !== undefined ? { weight: mi.weight } : {}),
           }));
 
         set({
@@ -436,6 +437,7 @@ export const useAppStore = create<AppState>()(
             isCustom: false,
             quantity: calculateQuantity(mi, newParams.peopleCount),
             sortOrder: newOrder,
+            ...(mi.weight !== undefined ? { weight: mi.weight } : {}),
           };
         });
 
