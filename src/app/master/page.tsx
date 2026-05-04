@@ -33,6 +33,7 @@ import {
   Users,
   UsersRound,
   Zap,
+  CheckCircle2,
 } from 'lucide-react';
 import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
 import { cn } from '@/lib/utils';
@@ -217,6 +218,7 @@ export default function MasterListPage() {
       quantity: editingItem.quantity,
       perPerson: editingItem.perPerson,
       weight: editingItem.weight,
+      defaultChecked: editingItem.defaultChecked,
     });
     setEditingItem(null);
   };
@@ -632,6 +634,11 @@ export default function MasterListPage() {
                                       {item.weight >= 1000 ? `${(item.weight / 1000).toFixed(1)}kg` : `${item.weight}g`}
                                     </Badge>
                                   )}
+                                  {item.defaultChecked && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 text-green-700 bg-green-100 border-green-200 dark:text-green-300 dark:bg-green-950 dark:border-green-800">
+                                      ✓ standaard
+                                    </Badge>
+                                  )}
                                   {item.conditions.weather && item.conditions.weather.length > 0 && (
                                     <Badge variant="outline" className="text-[10px]">
                                       {item.conditions.weather.join(', ')}
@@ -847,6 +854,22 @@ export default function MasterListPage() {
                 <span className="font-medium">Per persoon</span>
                 <span className="text-xs ml-auto">
                   {editingItem.perPerson ? 'Ja — vermenigvuldigt' : 'Nee — vast aantal'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingItem({ ...editingItem, defaultChecked: !editingItem.defaultChecked })}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm w-full transition-colors',
+                  editingItem.defaultChecked
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground'
+                )}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                <span className="font-medium">Standaard ingepakt</span>
+                <span className="text-xs ml-auto">
+                  {editingItem.defaultChecked ? 'Ja — al aangevinkt bij nieuwe trips' : 'Nee'}
                 </span>
               </button>
               <div className="space-y-2">

@@ -23,6 +23,7 @@ export interface MasterItem {
   perPerson?: boolean;  // if true, multiply by peopleCount
   sortOrder?: number;   // order within category
   weight?: number;      // grams per unit
+  defaultChecked?: boolean; // starts as checked when adding to a new trip
 }
 
 export interface Category {

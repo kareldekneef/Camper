@@ -25,6 +25,8 @@ import { GroupCard } from '@/components/group-card';
 export default function SettingsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showSyncConfirm, setShowSyncConfirm] = useState(false);
+  const [syncResult, setSyncResult] = useState<number | null>(null);
   const [importStatus, setImportStatus] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
   const [signingIn, setSigningIn] = useState(false);
@@ -113,6 +115,12 @@ export default function SettingsPage() {
       customActivities: [],
     });
     setShowResetConfirm(false);
+  };
+
+  const handleSyncWithDefaults = () => {
+    const added = useAppStore.getState().syncWithDefaultList();
+    setSyncResult(added);
+    setShowSyncConfirm(false);
   };
 
   const handleClearAll = async () => {
@@ -258,7 +266,38 @@ export default function SettingsPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Standaardlijst</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
+            {syncResult !== null && (
+              <p className="text-sm text-muted-foreground">
+                {syncResult === 0
+                  ? 'Alles is al up-to-date — geen nieuwe items gevonden.'
+                  : `${syncResult} nieuwe item${syncResult !== 1 ? 's' : ''} toegevoegd aan je lijst.`}
+              </p>
+            )}
+            <Dialog open={showSyncConfirm} onOpenChange={setShowSyncConfirm}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2" onClick={() => setSyncResult(null)}>
+                  <Cloud className="h-4 w-4" />
+                  Nieuwe items uit standaardlijst toevoegen
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Synchroniseren met standaardlijst?</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">
+                  Nieuwe items uit de standaardlijst worden toegevoegd aan jouw lijst. Bestaande items en aanpassingen blijven ongewijzigd.
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setShowSyncConfirm(false)}>
+                    Annuleren
+                  </Button>
+                  <Button onClick={handleSyncWithDefaults}>
+                    Toevoegen
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
             <Dialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">

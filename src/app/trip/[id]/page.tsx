@@ -519,6 +519,9 @@ export default function TripDetailPage({
                             onUpdateQuantity={(quantity) =>
                               updateTripItem(item.id, { quantity })
                             }
+                            onUpdateWeight={(weight) =>
+                              updateTripItem(item.id, { weight })
+                            }
                             onSaveToMaster={
                               item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
                             }
@@ -550,6 +553,9 @@ export default function TripDetailPage({
                         }
                         onUpdateQuantity={(quantity) =>
                           updateTripItem(item.id, { quantity })
+                        }
+                        onUpdateWeight={(weight) =>
+                          updateTripItem(item.id, { weight })
                         }
                         onSaveToMaster={
                           item.isCustom ? () => saveTripItemToMaster(item.id) : undefined
@@ -781,6 +787,7 @@ function ItemRow({
   onDelete,
   onUpdateNotes,
   onUpdateQuantity,
+  onUpdateWeight,
   onSaveToMaster,
   onCopyToShopping,
   onTogglePurchased,
@@ -792,6 +799,7 @@ function ItemRow({
   onDelete: () => void;
   onUpdateNotes: (notes: string) => void;
   onUpdateQuantity: (quantity: number) => void;
+  onUpdateWeight: (weight: number | undefined) => void;
   onSaveToMaster?: () => void;
   onCopyToShopping?: () => void;
   onTogglePurchased?: () => void;
@@ -799,6 +807,7 @@ function ItemRow({
   const [showActions, setShowActions] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes || '');
+  const [weightInput, setWeightInput] = useState(item.weight ? String(item.weight) : '');
   const [swipeX, setSwipeX] = useState(0);  // positive = right swipe, negative = left swipe
   const [swiping, setSwiping] = useState(false);
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -931,6 +940,11 @@ function ItemRow({
                   ×{quantity}
                 </Badge>
               )}
+              {item.weight && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 text-muted-foreground">
+                  {item.weight >= 1000 ? `${(item.weight / 1000).toFixed(1)}kg` : `${item.weight}g`}
+                </Badge>
+              )}
             </div>
             {item.notes && (
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -999,6 +1013,26 @@ function ItemRow({
                     >
                       <Plus className="h-3 w-3" />
                     </button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between px-3 py-2 text-sm gap-3">
+                  <span className="shrink-0">Gewicht (g)</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={weightInput}
+                      onChange={(e) => setWeightInput(e.target.value)}
+                      onBlur={() => {
+                        const val = parseInt(weightInput) || 0;
+                        onUpdateWeight(val > 0 ? val : undefined);
+                        setWeightInput(val > 0 ? String(val) : '');
+                      }}
+                      className="w-20 rounded border border-input bg-background px-2 py-0.5 text-sm text-right"
+                    />
+                    <span className="text-xs text-muted-foreground">g</span>
                   </div>
                 </div>
                 <div className="border-t my-1" />

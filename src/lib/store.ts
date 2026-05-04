@@ -47,6 +47,7 @@ interface AppState {
   updateMasterItem: (id: string, item: Partial<MasterItem>) => void;
   deleteMasterItem: (id: string) => void;
   reorderMasterItems: (categoryId: string, orderedIds: string[]) => void;
+  syncWithDefaultList: () => number; // returns count of added items
 
   // Custom Activities
   addCustomActivity: (name: string, icon: string) => void;
@@ -239,6 +240,21 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      syncWithDefaultList: () => {
+        const state = get();
+        const existing = state.masterItems;
+        const existingIds = new Set(existing.map((i) => i.id));
+        const existingNames = new Set(
+          existing.map((i) => `${i.categoryId}::${i.name.toLowerCase()}`)
+        );
+        const toAdd = defaultMasterItems.filter(
+          (di) => !existingIds.has(di.id) && !existingNames.has(`${di.categoryId}::${di.name.toLowerCase()}`)
+        );
+        if (toAdd.length === 0) return 0;
+        set({ masterItems: [...existing, ...toAdd] });
+        return toAdd.length;
+      },
+
       // Custom Activities
       addCustomActivity: (name, icon) => {
         set({
@@ -314,7 +330,7 @@ export const useAppStore = create<AppState>()(
             masterItemId: mi.id,
             name: mi.name,
             categoryId: mi.categoryId,
-            checked: false,
+            checked: mi.defaultChecked ?? false,
             isCustom: false,
             quantity: calculateQuantity(mi, params.peopleCount),
             sortOrder: sortCounter++,
@@ -433,7 +449,7 @@ export const useAppStore = create<AppState>()(
             masterItemId: mi.id,
             name: mi.name,
             categoryId: mi.categoryId,
-            checked: false,
+            checked: mi.defaultChecked ?? false,
             isCustom: false,
             quantity: calculateQuantity(mi, newParams.peopleCount),
             sortOrder: newOrder,
