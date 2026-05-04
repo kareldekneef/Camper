@@ -24,6 +24,7 @@ export interface MasterItem {
   sortOrder?: number;   // order within category
   weight?: number;      // grams per unit
   defaultChecked?: boolean; // starts as checked when adding to a new trip
+  defaultSkipped?: boolean; // starts as skipped ("niet nodig") when adding to a new trip
 }
 
 export interface Category {

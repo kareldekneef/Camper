@@ -34,6 +34,7 @@ import {
   UsersRound,
   Zap,
   CheckCircle2,
+  Ban,
 } from 'lucide-react';
 import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
 import { cn } from '@/lib/utils';
@@ -219,6 +220,7 @@ export default function MasterListPage() {
       perPerson: editingItem.perPerson,
       weight: editingItem.weight,
       defaultChecked: editingItem.defaultChecked,
+      defaultSkipped: editingItem.defaultSkipped,
     });
     setEditingItem(null);
   };
@@ -634,11 +636,6 @@ export default function MasterListPage() {
                                       {item.weight >= 1000 ? `${(item.weight / 1000).toFixed(1)}kg` : `${item.weight}g`}
                                     </Badge>
                                   )}
-                                  {item.defaultChecked && (
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 text-green-700 bg-green-100 border-green-200 dark:text-green-300 dark:bg-green-950 dark:border-green-800">
-                                      ✓ standaard
-                                    </Badge>
-                                  )}
                                   {item.conditions.weather && item.conditions.weather.length > 0 && (
                                     <Badge variant="outline" className="text-[10px]">
                                       {item.conditions.weather.join(', ')}
@@ -654,6 +651,20 @@ export default function MasterListPage() {
                                       {item.conditions.minPeople}+ pers.
                                     </Badge>
                                   )}
+                                  <button
+                                    title={item.defaultChecked ? 'Standaard ingepakt — klik om uit te zetten' : 'Klik om standaard ingepakt te maken'}
+                                    onClick={() => updateMasterItem(item.id, { defaultChecked: !item.defaultChecked })}
+                                    className={cn('p-1 transition-colors', item.defaultChecked ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground hover:text-green-600 dark:hover:text-green-400')}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    title={item.defaultSkipped ? 'Standaard niet nodig — klik om uit te zetten' : 'Klik om standaard niet nodig te maken'}
+                                    onClick={() => updateMasterItem(item.id, { defaultSkipped: !item.defaultSkipped })}
+                                    className={cn('p-1 transition-colors', item.defaultSkipped ? 'text-orange-500 dark:text-orange-400' : 'text-muted-foreground hover:text-orange-500 dark:hover:text-orange-400')}
+                                  >
+                                    <Ban className="h-3.5 w-3.5" />
+                                  </button>
                                   <button
                                     onClick={() => setEditingItem({ ...item })}
                                     className="p-1 text-muted-foreground hover:text-foreground"
@@ -858,11 +869,11 @@ export default function MasterListPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setEditingItem({ ...editingItem, defaultChecked: !editingItem.defaultChecked })}
+                onClick={() => setEditingItem({ ...editingItem, defaultChecked: !editingItem.defaultChecked, defaultSkipped: editingItem.defaultChecked ? editingItem.defaultSkipped : false })}
                 className={cn(
                   'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm w-full transition-colors',
                   editingItem.defaultChecked
-                    ? 'border-primary bg-primary/10 text-primary'
+                    ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
                     : 'border-border text-muted-foreground'
                 )}
               >
@@ -870,6 +881,22 @@ export default function MasterListPage() {
                 <span className="font-medium">Standaard ingepakt</span>
                 <span className="text-xs ml-auto">
                   {editingItem.defaultChecked ? 'Ja — al aangevinkt bij nieuwe trips' : 'Nee'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingItem({ ...editingItem, defaultSkipped: !editingItem.defaultSkipped, defaultChecked: editingItem.defaultSkipped ? editingItem.defaultChecked : false })}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm w-full transition-colors',
+                  editingItem.defaultSkipped
+                    ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300'
+                    : 'border-border text-muted-foreground'
+                )}
+              >
+                <Ban className="h-4 w-4" />
+                <span className="font-medium">Standaard niet nodig</span>
+                <span className="text-xs ml-auto">
+                  {editingItem.defaultSkipped ? 'Ja — standaard overgeslagen' : 'Nee'}
                 </span>
               </button>
               <div className="space-y-2">
