@@ -94,7 +94,7 @@ export default function TripDetailPage({
   const skipTripItem = useAppStore((s) => s.skipTripItem);
   const masterItems = useAppStore((s) => s.masterItems);
   const updateMasterItem = useAppStore((s) => s.updateMasterItem);
-  const currentGroup = useAppStore((s) => s.currentGroup);
+  const groups = useAppStore((s) => s.groups);
   const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -105,7 +105,7 @@ export default function TripDetailPage({
   const [newItemQuantity, setNewItemQuantity] = useState(1);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('default');
-  const [showSkipped, setShowSkipped] = useState(false);
+  const [showSkipped, setShowSkipped] = useState(true);
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [showUncheckConfirm, setShowUncheckConfirm] = useState(false);
   const [shareStatus, setShareStatus] = useState<string>('');
@@ -113,6 +113,7 @@ export default function TripDetailPage({
 
   const isSharedTrip = !!trip?.groupId && !!trip?.creatorId;
   const isCreator = isSharedTrip && trip?.creatorId === user?.uid;
+  const tripGroup = trip?.groupId ? groups.find((g) => g.id === trip.groupId) : undefined;
 
   const handleDeleteTripItem = useCallback((item: TripItem) => {
     const deletedItem = { ...item };
@@ -473,7 +474,7 @@ export default function TripDetailPage({
               {showSkipped && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
             </div>
             <Ban className="h-3 w-3" />
-            <span>Toon "niet nodig" ({totalSkipped})</span>
+            <span>{showSkipped ? 'Verberg "niet nodig"' : 'Toon "niet nodig"'} ({totalSkipped})</span>
           </button>
         </div>
       )}
@@ -747,10 +748,10 @@ export default function TripDetailPage({
       />
 
       {/* Permissions management dialog (creator only) */}
-      {isCreator && currentGroup && (
+      {isCreator && tripGroup && (
         <PermissionsDialog
           trip={trip}
-          group={currentGroup}
+          group={tripGroup}
           open={showPermissions}
           onOpenChange={setShowPermissions}
         />

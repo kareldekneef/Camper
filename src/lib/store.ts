@@ -27,7 +27,8 @@ interface AppState {
   seenSharedTripIds: string[];
 
   // Group state (not persisted to localStorage)
-  currentGroup: Group | null;
+  currentGroup: Group | null; // the group whose master list is mirrored locally ("active" group)
+  groups: Group[]; // all groups this user belongs to
   sharedTrips: Trip[];
   sharedTripItems: TripItem[];
   personalBackupItems: MasterItem[];
@@ -66,7 +67,7 @@ interface AppState {
     peopleCount: number;
     activities: Activity[];
     creatorId?: string;
-    shareWithGroup?: boolean;
+    groupId?: string | null; // group to share with, or null/undefined for a personal trip
     permissions?: Record<string, TripPermission>;
   }) => string;
   updateTrip: (id: string, updates: Partial<Trip>) => void;
@@ -79,6 +80,7 @@ interface AppState {
 
   // Groups
   setCurrentGroup: (group: Group | null) => void;
+  setGroups: (groups: Group[]) => void;
   setSharedTrips: (trips: Trip[], tripItems: TripItem[]) => void;
   setPersonalBackupItems: (items: MasterItem[]) => void;
   addPersonalItemToGroup: (itemId: string) => void;
@@ -150,6 +152,7 @@ export const useAppStore = create<AppState>()(
       initialized: false,
       seenSharedTripIds: [],
       currentGroup: null,
+      groups: [],
       sharedTrips: [],
       sharedTripItems: [],
       personalBackupItems: [],
@@ -330,14 +333,14 @@ export const useAppStore = create<AppState>()(
       createTrip: (params) => {
         const state = get();
         const tripId = uuid();
-        const group = state.currentGroup;
-        const { creatorId, shareWithGroup, permissions: paramPermissions, ...tripParams } = params;
+        const { creatorId, groupId, permissions: paramPermissions, ...tripParams } = params;
+        const group = groupId ? state.groups.find((g) => g.id === groupId) : undefined;
         const trip: Trip = {
           id: tripId,
           ...tripParams,
           status: 'planning',
           createdAt: new Date().toISOString(),
-          ...(group && shareWithGroup !== false
+          ...(group
             ? {
                 groupId: group.id,
                 creatorId: creatorId,
@@ -509,6 +512,10 @@ export const useAppStore = create<AppState>()(
       // Groups
       setCurrentGroup: (group) => {
         set({ currentGroup: group });
+      },
+
+      setGroups: (groups) => {
+        set({ groups });
       },
 
       setSharedTrips: (trips, tripItems) => {
@@ -812,7 +819,7 @@ export const useAppStore = create<AppState>()(
         initialized: state.initialized,
         seenSharedTripIds: state.seenSharedTripIds,
         // Excluded from localStorage (fetched from Firestore):
-        // currentGroup, sharedTrips, sharedTripItems, personalBackupItems
+        // currentGroup, groups, sharedTrips, sharedTripItems, personalBackupItems
       }),
     }
   )

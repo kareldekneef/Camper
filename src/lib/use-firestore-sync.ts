@@ -5,7 +5,7 @@ import { User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAppStore } from './store';
-import { Group, TripItem } from './types';
+import { Group, Trip, TripItem } from './types';
 import {
   uploadAllToFirestore,
   downloadFromFirestore,
@@ -14,8 +14,9 @@ import {
   syncTripItemsStatus,
 } from './firestore-sync';
 import {
-  fetchUserGroupId,
-  fetchGroup,
+  fetchUserGroupIds,
+  fetchUserActiveGroupId,
+  fetchUserGroups,
   downloadGroupMasterData,
   downloadPersonalMasterData,
   fetchSharedTrips,
@@ -33,11 +34,48 @@ function migrateCategories(categories: Category[]): Category[] {
   );
 }
 
+// Fetch every group a user belongs to, plus which one is "active" (the one
+// whose master list is mirrored into local state). Falls back gracefully
+// when the stored active group id no longer resolves to a real group.
+async function loadUserGroups(uid: string): Promise<{ groups: Group[]; activeGroup: Group | null }> {
+  const groupIds = await fetchUserGroupIds(uid);
+  if (groupIds.length === 0) return { groups: [], activeGroup: null };
+
+  const [groups, activeGroupId] = await Promise.all([
+    fetchUserGroups(groupIds),
+    fetchUserActiveGroupId(uid),
+  ]);
+
+  if (groups.length === 0) return { groups: [], activeGroup: null };
+
+  const activeGroup = groups.find((g) => g.id === activeGroupId) ?? groups[0];
+  return { groups, activeGroup };
+}
+
+// Fetch shared trips/tripItems from every member across every group the user is in.
+async function loadAllSharedTrips(
+  groups: Group[],
+  uid: string
+): Promise<{ trips: Trip[]; tripItems: TripItem[] }> {
+  const results = await Promise.all(
+    groups.map((group) => {
+      const otherUids = Object.keys(group.members).filter((id) => id !== uid);
+      return otherUids.length > 0
+        ? fetchSharedTrips(group.id, uid, otherUids)
+        : Promise.resolve({ trips: [], tripItems: [] });
+    })
+  );
+  return {
+    trips: results.flatMap((r) => r.trips),
+    tripItems: results.flatMap((r) => r.tripItems),
+  };
+}
+
 export function useFirestoreSync(user: User | null) {
   const isSyncingRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevHashRef = useRef('');
-  const currentGroupId = useAppStore((s) => s.currentGroup?.id ?? null);
+  const groupIdsKey = useAppStore((s) => s.groups.map((g) => g.id).join(','));
 
   // Dirty tracking for single-user reliability
   const dirtyRef = useRef(false);
@@ -183,25 +221,19 @@ export function useFirestoreSync(user: User | null) {
       isSyncingRef.current = true;
       try {
         // Always check group membership from Firestore — don't trust local state
-        const groupId = await fetchUserGroupId(uid);
+        const { groups, activeGroup } = await loadUserGroups(uid);
 
-        if (groupId) {
-          // Group mode: refresh group + master data + own trips + shared trips
-          const [freshGroup, groupData, personalData] = await Promise.all([
-            fetchGroup(groupId),
-            downloadGroupMasterData(groupId),
+        if (activeGroup) {
+          // Group mode: refresh active group's master data + own trips + shared trips from all groups
+          const [groupData, personalData, shared] = await Promise.all([
+            downloadGroupMasterData(activeGroup.id),
             downloadFromFirestore(uid),
+            loadAllSharedTrips(groups, uid),
           ]);
 
-          if (!freshGroup) return;
-
-          const otherUids = Object.keys(freshGroup.members).filter((id) => id !== uid);
-          const shared = otherUids.length > 0
-            ? await fetchSharedTrips(groupId, uid, otherUids)
-            : { trips: [], tripItems: [] };
-
           useAppStore.setState({
-            currentGroup: freshGroup,
+            currentGroup: activeGroup,
+            groups,
             categories: migrateCategories(groupData.categories),
             masterItems: groupData.masterItems,
             customActivities: groupData.customActivities,
@@ -221,6 +253,7 @@ export function useFirestoreSync(user: User | null) {
               trips: firestoreData.trips,
               tripItems: firestoreData.tripItems,
               currentGroup: null,
+              groups: [],
               sharedTrips: [],
               sharedTripItems: [],
             });
@@ -244,6 +277,7 @@ export function useFirestoreSync(user: User | null) {
       prevHashRef.current = '';
       useAppStore.setState({
         currentGroup: null,
+        groups: [],
         sharedTrips: [],
         sharedTripItems: [],
         personalBackupItems: [],
@@ -262,69 +296,78 @@ export function useFirestoreSync(user: User | null) {
 
         // Step 1: Determine group membership (needed before any upload,
         // since upload path depends on whether user is in a group).
-        const groupId = await fetchUserGroupId(user!.uid);
+        let { groups, activeGroup } = await loadUserGroups(user!.uid);
         if (cancelled) return;
 
-        if (groupId) {
+        if (activeGroup) {
           // Group mode
-          let preloadedGroup: Group | null = null;
-
           if (hasPendingSync) {
-            preloadedGroup = await fetchGroup(groupId);
+            // Temporarily set currentGroup so syncToFirestore writes to the right path.
+            // isSyncingRef is true here, so the subscriber sees this setState but only
+            // marks dirty (no spurious debounce queued).
+            useAppStore.setState({ currentGroup: activeGroup, groups });
+            isSyncingRef.current = false; // release so syncToFirestore can proceed
+            await syncToFirestore(user!.uid);
+            isSyncingRef.current = true;  // re-acquire for download phase
             if (cancelled) return;
-            if (preloadedGroup) {
-              // Temporarily set currentGroup so syncToFirestore writes to the right path.
-              // isSyncingRef is true here, so the subscriber sees this setState but only
-              // marks dirty (no spurious debounce queued).
-              useAppStore.setState({ currentGroup: preloadedGroup });
-              isSyncingRef.current = false; // release so syncToFirestore can proceed
-              await syncToFirestore(user!.uid);
-              isSyncingRef.current = true;  // re-acquire for download phase
+            // The write above may have touched group membership indirectly elsewhere —
+            // re-resolve in case anything changed while we were writing.
+            ({ groups, activeGroup } = await loadUserGroups(user!.uid));
+            if (cancelled) return;
+
+            if (!activeGroup) {
+              // Left every group during the flush (e.g. from another device) —
+              // fall back to personal mode.
+              const firestoreData = await downloadFromFirestore(user!.uid);
               if (cancelled) return;
+              if (firestoreData === null) {
+                await uploadAllToFirestore(user!.uid);
+              } else {
+                useAppStore.setState({
+                  categories: migrateCategories(firestoreData.categories),
+                  masterItems: firestoreData.masterItems,
+                  customActivities: firestoreData.customActivities ?? [],
+                  trips: firestoreData.trips,
+                  tripItems: firestoreData.tripItems,
+                  currentGroup: null,
+                  groups: [],
+                  sharedTrips: [],
+                  sharedTripItems: [],
+                  personalBackupItems: [],
+                });
+              }
+              return;
             }
           }
 
-          const [group, groupMasterData, personalData, personalMasterItems] = await Promise.all([
-            preloadedGroup ? Promise.resolve(preloadedGroup) : fetchGroup(groupId),
-            downloadGroupMasterData(groupId),
+          const [groupMasterData, personalData, personalMasterItems, shared] = await Promise.all([
+            downloadGroupMasterData(activeGroup.id),
             downloadFromFirestore(user!.uid),
             downloadPersonalMasterData(user!.uid),
+            loadAllSharedTrips(groups, user!.uid),
           ]);
 
           if (cancelled) return;
 
-          if (group) {
-            const groupItemNames = new Set(
-              groupMasterData.masterItems.map((i) => i.name.toLowerCase())
-            );
-            const backupItems = personalMasterItems.filter(
-              (i) => !groupItemNames.has(i.name.toLowerCase())
-            );
+          const groupItemNames = new Set(
+            groupMasterData.masterItems.map((i) => i.name.toLowerCase())
+          );
+          const backupItems = personalMasterItems.filter(
+            (i) => !groupItemNames.has(i.name.toLowerCase())
+          );
 
-            useAppStore.setState({
-              currentGroup: group,
-              categories: migrateCategories(groupMasterData.categories),
-              masterItems: groupMasterData.masterItems,
-              customActivities: groupMasterData.customActivities,
-              trips: personalData?.trips ?? [],
-              tripItems: personalData?.tripItems ?? [],
-              personalBackupItems: backupItems,
-            });
-
-            // Fetch shared trips from other group members
-            const otherUids = Object.keys(group.members).filter(
-              (uid) => uid !== user!.uid
-            );
-            if (otherUids.length > 0) {
-              const shared = await fetchSharedTrips(group.id, user!.uid, otherUids);
-              if (!cancelled) {
-                useAppStore.setState({
-                  sharedTrips: shared.trips,
-                  sharedTripItems: shared.tripItems,
-                });
-              }
-            }
-          }
+          useAppStore.setState({
+            currentGroup: activeGroup,
+            groups,
+            categories: migrateCategories(groupMasterData.categories),
+            masterItems: groupMasterData.masterItems,
+            customActivities: groupMasterData.customActivities,
+            trips: personalData?.trips ?? [],
+            tripItems: personalData?.tripItems ?? [],
+            personalBackupItems: backupItems,
+            sharedTrips: shared.trips,
+            sharedTripItems: shared.tripItems,
+          });
         } else {
           // Personal mode
           if (hasPendingSync) {
@@ -348,6 +391,7 @@ export function useFirestoreSync(user: User | null) {
               trips: firestoreData.trips,
               tripItems: firestoreData.tripItems,
               currentGroup: null,
+              groups: [],
               sharedTrips: [],
               sharedTripItems: [],
               personalBackupItems: [],
@@ -445,50 +489,57 @@ export function useFirestoreSync(user: User | null) {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [user, syncToFirestore, refreshOnVisibility]);
 
-  // Real-time listener on group document — detect new members instantly
+  // Real-time listeners on every group document the user belongs to —
+  // detect new members (and other live changes) instantly, in any group.
   useEffect(() => {
-    if (!user || !currentGroupId) return;
+    if (!user || !groupIdsKey) return;
+    const groupIds = groupIdsKey.split(',').filter(Boolean);
+    if (groupIds.length === 0) return;
 
-    const groupRef = doc(db, 'groups', currentGroupId);
+    const unsubscribes = groupIds.map((groupId) =>
+      onSnapshot(
+        doc(db, 'groups', groupId),
+        (snapshot) => {
+          if (!snapshot.exists()) return;
 
-    const unsubscribe = onSnapshot(
-      groupRef,
-      (snapshot) => {
-        if (!snapshot.exists()) return;
+          const freshGroup = { id: snapshot.id, ...snapshot.data() } as Group;
+          const state = useAppStore.getState();
+          const staleGroup = state.groups.find((g) => g.id === groupId);
+          if (!staleGroup) return;
 
-        const freshGroup = { id: snapshot.id, ...snapshot.data() } as Group;
-        const currentGroup = useAppStore.getState().currentGroup;
-        if (!currentGroup) return;
+          // Compare old and new member UIDs to find who just joined
+          const oldUids = new Set(Object.keys(staleGroup.members));
+          const newUids = Object.keys(freshGroup.members);
+          const justJoined = newUids.filter((uid) => !oldUids.has(uid));
 
-        // Compare old and new member UIDs to find who just joined
-        const oldUids = new Set(Object.keys(currentGroup.members));
-        const newUids = Object.keys(freshGroup.members);
-        const justJoined = newUids.filter((uid) => !oldUids.has(uid));
+          // Update the group in the store (and currentGroup, if it's the active one)
+          isSyncingRef.current = true;
+          useAppStore.setState({
+            groups: state.groups.map((g) => (g.id === groupId ? freshGroup : g)),
+            currentGroup: state.currentGroup?.id === groupId ? freshGroup : state.currentGroup,
+          });
 
-        // Update the group in the store
-        isSyncingRef.current = true;
-        useAppStore.setState({ currentGroup: freshGroup });
+          // Flag new members (only if there are actually new ones)
+          if (justJoined.length > 0) {
+            useAppStore.setState({ newMemberUids: justJoined });
 
-        // Flag new members (only if there are actually new ones)
-        if (justJoined.length > 0) {
-          useAppStore.setState({ newMemberUids: justJoined });
+            // Auto-clear the "Nieuw" badge after 10 seconds
+            setTimeout(() => {
+              useAppStore.setState({ newMemberUids: [] });
+            }, 10000);
+          }
 
-          // Auto-clear the "Nieuw" badge after 10 seconds
-          setTimeout(() => {
-            useAppStore.setState({ newMemberUids: [] });
-          }, 10000);
+          prevHashRef.current = hashState(useAppStore.getState());
+          isSyncingRef.current = false;
+        },
+        (error) => {
+          console.error('Group snapshot listener error:', error);
         }
-
-        prevHashRef.current = hashState(useAppStore.getState());
-        isSyncingRef.current = false;
-      },
-      (error) => {
-        console.error('Group snapshot listener error:', error);
-      }
+      )
     );
 
-    return () => unsubscribe();
-  }, [user, currentGroupId]);
+    return () => unsubscribes.forEach((unsub) => unsub());
+  }, [user, groupIdsKey]);
 }
 
 function hashState(state: {

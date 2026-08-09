@@ -10,6 +10,7 @@ import {
   where,
   writeBatch,
   deleteField,
+  arrayUnion,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { User } from 'firebase/auth';
@@ -38,12 +39,70 @@ function memberFromUser(user: User, role: 'owner' | 'member'): GroupMember {
   };
 }
 
-// --- Fetch user's groupId ---
+// --- Fetch all groups a user belongs to ---
 
-export async function fetchUserGroupId(uid: string): Promise<string | null> {
+// Reads the multi-group `groupIds` array. Falls back to (and migrates) the
+// legacy single `groupId` field for users who joined before multi-group support.
+export async function fetchUserGroupIds(uid: string): Promise<string[]> {
+  const userDoc = await getDoc(doc(db, 'users', uid));
+  if (!userDoc.exists()) return [];
+  const data = userDoc.data();
+  const groupIds = data?.groupIds as string[] | undefined;
+  if (groupIds) return groupIds;
+
+  const legacyGroupId = data?.groupId as string | undefined;
+  if (legacyGroupId) {
+    // Lazily migrate — fire and forget, don't block the read path.
+    setDoc(
+      doc(db, 'users', uid),
+      { groupIds: [legacyGroupId], activeGroupId: legacyGroupId },
+      { merge: true }
+    ).catch(() => {});
+    return [legacyGroupId];
+  }
+
+  return [];
+}
+
+// --- Fetch the group whose master list is currently mirrored locally ---
+
+export async function fetchUserActiveGroupId(uid: string): Promise<string | null> {
   const userDoc = await getDoc(doc(db, 'users', uid));
   if (!userDoc.exists()) return null;
-  return userDoc.data()?.groupId || null;
+  const data = userDoc.data();
+  return (data?.activeGroupId as string | undefined) ?? (data?.groupId as string | undefined) ?? null;
+}
+
+// --- Set which group's master list is mirrored locally ---
+
+export async function setActiveGroupId(uid: string, groupId: string | null): Promise<void> {
+  await setDoc(
+    doc(db, 'users', uid),
+    { activeGroupId: groupId ?? deleteField() },
+    { merge: true }
+  );
+}
+
+// --- Switch active group: persist the choice and return fresh data to load ---
+
+export async function switchActiveGroup(
+  uid: string,
+  groupId: string
+): Promise<{ group: Group; categories: Category[]; masterItems: MasterItem[]; customActivities: CustomActivity[] } | null> {
+  await setActiveGroupId(uid, groupId);
+  const [group, masterData] = await Promise.all([
+    fetchGroup(groupId),
+    downloadGroupMasterData(groupId),
+  ]);
+  if (!group) return null;
+  return { group, ...masterData };
+}
+
+// --- Fetch multiple groups by id (skips any that no longer exist) ---
+
+export async function fetchUserGroups(groupIds: string[]): Promise<Group[]> {
+  const groups = await Promise.all(groupIds.map((id) => fetchGroup(id)));
+  return groups.filter((g): g is Group => g !== null);
 }
 
 // --- Fetch group document ---
@@ -181,8 +240,12 @@ export async function createGroup(
     await batch.commit();
   }
 
-  // Set user's groupId
-  await setDoc(doc(db, 'users', uid), { groupId }, { merge: true });
+  // Add group to this user's memberships and make it the active one
+  await setDoc(
+    doc(db, 'users', uid),
+    { groupIds: arrayUnion(groupId), activeGroupId: groupId },
+    { merge: true }
+  );
 
   return group;
 }
@@ -217,8 +280,12 @@ export async function joinGroup(
     [`members.${uid}`]: member,
   });
 
-  // Set user's groupId
-  await setDoc(doc(db, 'users', uid), { groupId: group.id }, { merge: true });
+  // Add group to this user's memberships and make it the active one
+  await setDoc(
+    doc(db, 'users', uid),
+    { groupIds: arrayUnion(group.id), activeGroupId: group.id },
+    { merge: true }
+  );
 
   // Return updated group
   group.members[uid] = member;
@@ -252,40 +319,60 @@ export async function leaveGroup(uid: string, groupId: string): Promise<void> {
     await deleteGroupData(groupId);
   }
 
-  // Copy group master list back to personal
-  const groupData = await downloadGroupMasterData(groupId).catch(() => null);
-  if (groupData) {
-    const allOps: Array<{ ref: ReturnType<typeof doc>; data: Record<string, unknown> }> = [];
-    for (const cat of groupData.categories) {
-      allOps.push({
-        ref: doc(db, 'users', uid, 'categories', cat.id),
-        data: cat as unknown as Record<string, unknown>,
-      });
-    }
-    for (const item of groupData.masterItems) {
-      allOps.push({
-        ref: doc(db, 'users', uid, 'masterItems', item.id),
-        data: item as unknown as Record<string, unknown>,
-      });
-    }
-    for (const ca of groupData.customActivities) {
-      allOps.push({
-        ref: doc(db, 'users', uid, 'customActivities', ca.id),
-        data: ca as unknown as Record<string, unknown>,
-      });
-    }
-    for (let i = 0; i < allOps.length; i += 499) {
-      const chunk = allOps.slice(i, i + 499);
-      const batch = writeBatch(db);
-      for (const op of chunk) {
-        batch.set(op.ref, op.data);
+  // Update this user's group memberships — drop this group, and if it was the
+  // active one, fall back to another remaining group (or personal mode).
+  const [currentGroupIds, currentActiveId] = await Promise.all([
+    fetchUserGroupIds(uid),
+    fetchUserActiveGroupId(uid),
+  ]);
+  const remainingGroupIds = currentGroupIds.filter((id) => id !== groupId);
+  const wasActive = currentActiveId === groupId;
+  const newActiveId = wasActive ? remainingGroupIds[0] ?? null : currentActiveId;
+
+  await setDoc(
+    doc(db, 'users', uid),
+    {
+      groupIds: remainingGroupIds,
+      activeGroupId: newActiveId ?? deleteField(),
+      groupId: deleteField(), // clear legacy field, if any
+    },
+    { merge: true }
+  );
+
+  // Falling back to fully personal mode — copy this group's master list back
+  // to personal storage so nothing is lost.
+  if (remainingGroupIds.length === 0) {
+    const groupData = await downloadGroupMasterData(groupId).catch(() => null);
+    if (groupData) {
+      const allOps: Array<{ ref: ReturnType<typeof doc>; data: Record<string, unknown> }> = [];
+      for (const cat of groupData.categories) {
+        allOps.push({
+          ref: doc(db, 'users', uid, 'categories', cat.id),
+          data: cat as unknown as Record<string, unknown>,
+        });
       }
-      await batch.commit();
+      for (const item of groupData.masterItems) {
+        allOps.push({
+          ref: doc(db, 'users', uid, 'masterItems', item.id),
+          data: item as unknown as Record<string, unknown>,
+        });
+      }
+      for (const ca of groupData.customActivities) {
+        allOps.push({
+          ref: doc(db, 'users', uid, 'customActivities', ca.id),
+          data: ca as unknown as Record<string, unknown>,
+        });
+      }
+      for (let i = 0; i < allOps.length; i += 499) {
+        const chunk = allOps.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const op of chunk) {
+          batch.set(op.ref, op.data);
+        }
+        await batch.commit();
+      }
     }
   }
-
-  // Clear user's groupId
-  await updateDoc(doc(db, 'users', uid), { groupId: deleteField() });
 }
 
 // --- Delete a group (owner only) ---
@@ -296,9 +383,28 @@ export async function deleteGroup(uid: string, groupId: string): Promise<void> {
     throw new Error('Alleen de eigenaar kan de groep verwijderen');
   }
 
-  // Clear groupId for all members
+  // Remove this group from every member's memberships, falling back to
+  // another remaining group (or personal mode) wherever it was active.
   for (const memberUid of Object.keys(group.members)) {
-    await updateDoc(doc(db, 'users', memberUid), { groupId: deleteField() }).catch(() => {});
+    try {
+      const [ids, activeId] = await Promise.all([
+        fetchUserGroupIds(memberUid),
+        fetchUserActiveGroupId(memberUid),
+      ]);
+      const remaining = ids.filter((id) => id !== groupId);
+      const newActive = activeId === groupId ? remaining[0] ?? null : activeId;
+      await setDoc(
+        doc(db, 'users', memberUid),
+        {
+          groupIds: remaining,
+          activeGroupId: newActive ?? deleteField(),
+          groupId: deleteField(),
+        },
+        { merge: true }
+      );
+    } catch {
+      // Best-effort cleanup — a stale membership entry is harmless.
+    }
   }
 
   // Delete group and sub-collections
@@ -364,5 +470,19 @@ export async function removeMember(
     [`members.${memberUid}`]: deleteField(),
   });
 
-  await updateDoc(doc(db, 'users', memberUid), { groupId: deleteField() }).catch(() => {});
+  try {
+    const [ids, activeId] = await Promise.all([
+      fetchUserGroupIds(memberUid),
+      fetchUserActiveGroupId(memberUid),
+    ]);
+    const remaining = ids.filter((id) => id !== groupId);
+    const newActive = activeId === groupId ? remaining[0] ?? null : activeId;
+    await setDoc(
+      doc(db, 'users', memberUid),
+      { groupIds: remaining, activeGroupId: newActive ?? deleteField(), groupId: deleteField() },
+      { merge: true }
+    );
+  } catch {
+    // Best-effort cleanup — a stale membership entry is harmless.
+  }
 }

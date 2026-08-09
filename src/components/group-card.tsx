@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Users, Copy, RefreshCw, UserMinus, Trash2, Plus, LogIn } from 'lucide-react';
+import { Users, Copy, RefreshCw, UserMinus, Trash2, Plus, LogIn, Star } from 'lucide-react';
 import {
   createGroup,
   joinGroup,
@@ -22,12 +22,17 @@ import {
   deleteGroup,
   regenerateInviteCode,
   removeMember,
+  switchActiveGroup,
 } from '@/lib/group-sync';
+import { Group } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 export function GroupCard() {
   const { user } = useAuth();
+  const groups = useAppStore((s) => s.groups);
   const currentGroup = useAppStore((s) => s.currentGroup);
   const setCurrentGroup = useAppStore((s) => s.setCurrentGroup);
+  const setGroups = useAppStore((s) => s.setGroups);
   const newMemberUids = useAppStore((s) => s.newMemberUids);
 
   const [creating, setCreating] = useState(false);
@@ -36,14 +41,26 @@ export function GroupCard() {
   const [inviteInput, setInviteInput] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [removingMemberUid, setRemovingMemberUid] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [switchingGroupId, setSwitchingGroupId] = useState<string | null>(null);
+  const [showLeaveConfirmFor, setShowLeaveConfirmFor] = useState<string | null>(null);
+  const [showDeleteConfirmFor, setShowDeleteConfirmFor] = useState<string | null>(null);
+  const [removingMember, setRemovingMember] = useState<{ groupId: string; uid: string } | null>(null);
+  const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
 
   if (!user) return null;
 
-  const isOwner = currentGroup?.ownerId === user.uid;
+  const upsertGroup = (updated: Group) => {
+    setGroups(groups.map((g) => (g.id === updated.id ? updated : g)));
+    if (currentGroup?.id === updated.id) setCurrentGroup(updated);
+  };
+
+  const removeGroupLocally = (groupId: string) => {
+    const remaining = groups.filter((g) => g.id !== groupId);
+    setGroups(remaining);
+    if (currentGroup?.id === groupId) {
+      setCurrentGroup(remaining[0] ?? null);
+    }
+  };
 
   const handleCreate = async () => {
     if (!groupName.trim()) return;
@@ -51,6 +68,7 @@ export function GroupCard() {
     setError('');
     try {
       const group = await createGroup(user.uid, groupName.trim(), user);
+      setGroups([...groups, group]);
       setCurrentGroup(group);
       setCreating(false);
       setGroupName('');
@@ -67,6 +85,7 @@ export function GroupCard() {
     setError('');
     try {
       const group = await joinGroup(user.uid, inviteInput.trim(), user);
+      setGroups([...groups, group]);
       setCurrentGroup(group);
       setJoining(false);
       setInviteInput('');
@@ -77,13 +96,33 @@ export function GroupCard() {
     }
   };
 
-  const handleLeave = async () => {
-    if (!currentGroup) return;
+  const handleSwitchActive = async (groupId: string) => {
+    if (currentGroup?.id === groupId) return;
+    setSwitchingGroupId(groupId);
+    setError('');
+    try {
+      const result = await switchActiveGroup(user.uid, groupId);
+      if (!result) throw new Error('Groep niet gevonden');
+      upsertGroup(result.group);
+      setCurrentGroup(result.group);
+      useAppStore.setState({
+        categories: result.categories,
+        masterItems: result.masterItems,
+        customActivities: result.customActivities,
+      });
+    } catch (e: unknown) {
+      setError((e as Error).message);
+    } finally {
+      setSwitchingGroupId(null);
+    }
+  };
+
+  const handleLeave = async (groupId: string) => {
     setLoading(true);
     try {
-      await leaveGroup(user.uid, currentGroup.id);
-      setCurrentGroup(null);
-      setShowLeaveConfirm(false);
+      await leaveGroup(user.uid, groupId);
+      removeGroupLocally(groupId);
+      setShowLeaveConfirmFor(null);
     } catch (e: unknown) {
       setError((e as Error).message);
     } finally {
@@ -91,13 +130,12 @@ export function GroupCard() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!currentGroup) return;
+  const handleDelete = async (groupId: string) => {
     setLoading(true);
     try {
-      await deleteGroup(user.uid, currentGroup.id);
-      setCurrentGroup(null);
-      setShowDeleteConfirm(false);
+      await deleteGroup(user.uid, groupId);
+      removeGroupLocally(groupId);
+      setShowDeleteConfirmFor(null);
     } catch (e: unknown) {
       setError((e as Error).message);
     } finally {
@@ -105,25 +143,26 @@ export function GroupCard() {
     }
   };
 
-  const handleRegenerateCode = async () => {
-    if (!currentGroup) return;
+  const handleRegenerateCode = async (group: Group) => {
     try {
-      const newCode = await regenerateInviteCode(currentGroup.id);
-      setCurrentGroup({ ...currentGroup, inviteCode: newCode });
+      const newCode = await regenerateInviteCode(group.id);
+      upsertGroup({ ...group, inviteCode: newCode });
     } catch (e: unknown) {
       setError((e as Error).message);
     }
   };
 
   const handleRemoveMember = async () => {
-    if (!currentGroup || !removingMemberUid) return;
+    if (!removingMember) return;
+    const group = groups.find((g) => g.id === removingMember.groupId);
+    if (!group) return;
     setLoading(true);
     try {
-      await removeMember(user.uid, currentGroup.id, removingMemberUid);
-      const updatedMembers = { ...currentGroup.members };
-      delete updatedMembers[removingMemberUid];
-      setCurrentGroup({ ...currentGroup, members: updatedMembers });
-      setRemovingMemberUid(null);
+      await removeMember(user.uid, group.id, removingMember.uid);
+      const updatedMembers = { ...group.members };
+      delete updatedMembers[removingMember.uid];
+      upsertGroup({ ...group, members: updatedMembers });
+      setRemovingMember(null);
     } catch (e: unknown) {
       setError((e as Error).message);
     } finally {
@@ -131,39 +170,243 @@ export function GroupCard() {
     }
   };
 
-  const handleCopyCode = async () => {
-    if (!currentGroup) return;
+  const handleCopyCode = async (group: Group) => {
     try {
-      await navigator.clipboard.writeText(currentGroup.inviteCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(group.inviteCode);
+      setCopiedGroupId(group.id);
+      setTimeout(() => setCopiedGroupId(null), 2000);
     } catch {
       // Fallback for iOS
       const input = document.createElement('input');
-      input.value = currentGroup.inviteCode;
+      input.value = group.inviteCode;
       document.body.appendChild(input);
       input.select();
       document.execCommand('copy');
       document.body.removeChild(input);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedGroupId(group.id);
+      setTimeout(() => setCopiedGroupId(null), 2000);
     }
   };
 
-  // No group — show create/join UI
-  if (!currentGroup) {
-    return (
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => {
+        const isOwner = group.ownerId === user.uid;
+        const isActive = currentGroup?.id === group.id;
+        const members = Object.values(group.members);
+
+        return (
+          <Card key={group.id} className={cn(isActive && 'ring-1 ring-primary/40')}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-base flex items-center gap-2 min-w-0">
+                  <Users className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{group.name}</span>
+                </CardTitle>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isActive && (
+                    <Badge className="text-xs gap-1 bg-primary/10 text-primary hover:bg-primary/10">
+                      <Star className="h-3 w-3" />
+                      Actief
+                    </Badge>
+                  )}
+                  <Badge variant="secondary" className="text-xs">
+                    {isOwner ? 'Eigenaar' : 'Lid'}
+                  </Badge>
+                </div>
+              </div>
+              {!isActive && (
+                <p className="text-xs text-muted-foreground">
+                  Standaardlijst en nieuwe trips gebruiken de <strong>actieve</strong> groep.
+                </p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!isActive && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  disabled={switchingGroupId === group.id}
+                  onClick={() => handleSwitchActive(group.id)}
+                >
+                  <Star className="h-3.5 w-3.5" />
+                  {switchingGroupId === group.id ? 'Bezig...' : 'Actief maken'}
+                </Button>
+              )}
+
+              {/* Members */}
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                  Leden ({members.length})
+                </p>
+                <div className="space-y-1.5">
+                  {members.map((member) => {
+                    const isNew = newMemberUids.includes(member.uid);
+                    return (
+                      <div
+                        key={member.uid}
+                        className={`flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors duration-500 ${isNew ? 'bg-blue-50 ring-1 ring-blue-200' : ''}`}
+                      >
+                        {member.photoURL ? (
+                          <img
+                            src={member.photoURL}
+                            alt=""
+                            className="h-6 w-6 rounded-full"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs">
+                            {member.displayName.charAt(0)}
+                          </div>
+                        )}
+                        <span className="text-sm flex-1 truncate">{member.displayName}</span>
+                        {isNew && (
+                          <Badge className="text-[10px] bg-blue-500 text-white animate-pulse px-1.5 py-0">
+                            Nieuw
+                          </Badge>
+                        )}
+                        {member.role === 'owner' && (
+                          <Badge variant="outline" className="text-xs">Eigenaar</Badge>
+                        )}
+                        {isOwner && member.uid !== user.uid && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => setRemovingMember({ groupId: group.id, uid: member.uid })}
+                          >
+                            <UserMinus className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Invite code */}
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                  Uitnodigingscode
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded bg-muted px-3 py-2 text-center font-mono text-lg tracking-widest">
+                    {group.inviteCode}
+                  </code>
+                  <Button variant="outline" size="icon" onClick={() => handleCopyCode(group)}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  {isOwner && (
+                    <Button variant="outline" size="icon" onClick={() => handleRegenerateCode(group)}>
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {copiedGroupId === group.id && <p className="text-xs text-muted-foreground">Gekopieerd!</p>}
+              </div>
+
+              {/* Leave / Delete */}
+              <div className="space-y-2 pt-2 border-t">
+                <Dialog
+                  open={showLeaveConfirmFor === group.id}
+                  onOpenChange={(open) => setShowLeaveConfirmFor(open ? group.id : null)}
+                >
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start gap-2 text-destructive">
+                      <LogIn className="h-4 w-4 rotate-180" />
+                      Groep verlaten
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Groep verlaten?</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-muted-foreground">
+                      {groups.length > 1
+                        ? 'Je blijft lid van je andere groepen.'
+                        : 'Je standaardlijst wordt teruggezet naar een kopie van de groepslijst.'}
+                      {isOwner && members.length > 1 && ' Het eigenaarschap wordt overgedragen.'}
+                    </p>
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="outline" onClick={() => setShowLeaveConfirmFor(null)}>Annuleren</Button>
+                      <Button variant="destructive" onClick={() => handleLeave(group.id)} disabled={loading}>
+                        {loading ? 'Bezig...' : 'Verlaten'}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {isOwner && (
+                  <Dialog
+                    open={showDeleteConfirmFor === group.id}
+                    onOpenChange={(open) => setShowDeleteConfirmFor(open ? group.id : null)}
+                  >
+                    <DialogTrigger asChild>
+                      <Button variant="destructive" className="w-full justify-start gap-2">
+                        <Trash2 className="h-4 w-4" />
+                        Groep verwijderen
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Groep verwijderen?</DialogTitle>
+                      </DialogHeader>
+                      <p className="text-sm text-muted-foreground">
+                        Dit verwijdert de groep permanent. Alle leden worden losgekoppeld.
+                      </p>
+                      <div className="flex gap-2 justify-end">
+                        <Button variant="outline" onClick={() => setShowDeleteConfirmFor(null)}>Annuleren</Button>
+                        <Button variant="destructive" onClick={() => handleDelete(group.id)} disabled={loading}>
+                          {loading ? 'Bezig...' : 'Verwijderen'}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+
+      {/* Remove member confirmation (shared across groups) */}
+      <Dialog open={!!removingMember} onOpenChange={(open) => !open && setRemovingMember(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Lid verwijderen?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Weet je zeker dat je{' '}
+            <strong>
+              {removingMember &&
+                groups.find((g) => g.id === removingMember.groupId)?.members[removingMember.uid]?.displayName}
+            </strong>{' '}
+            uit de groep wilt verwijderen?
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setRemovingMember(null)}>Annuleren</Button>
+            <Button variant="destructive" onClick={handleRemoveMember} disabled={loading}>
+              {loading ? 'Bezig...' : 'Verwijderen'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create / join another group */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Gezin / Groep
+            {groups.length > 0 ? 'Nog een groep' : 'Gezin / Groep'}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Deel je standaardlijst met je gezinsleden.
-          </p>
+          {groups.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Deel je standaardlijst met je gezinsleden.
+            </p>
+          )}
 
           {!creating && !joining && (
             <div className="space-y-2">
@@ -229,171 +472,6 @@ export function GroupCard() {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>
-    );
-  }
-
-  // In a group — show group info
-  const members = Object.values(currentGroup.members);
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            {currentGroup.name}
-          </CardTitle>
-          <Badge variant="secondary" className="text-xs">
-            {isOwner ? 'Eigenaar' : 'Lid'}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Members */}
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-            Leden ({members.length})
-          </p>
-          <div className="space-y-1.5">
-            {members.map((member) => {
-              const isNew = newMemberUids.includes(member.uid);
-              return (
-                <div
-                  key={member.uid}
-                  className={`flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors duration-500 ${isNew ? 'bg-blue-50 ring-1 ring-blue-200' : ''}`}
-                >
-                  {member.photoURL ? (
-                    <img
-                      src={member.photoURL}
-                      alt=""
-                      className="h-6 w-6 rounded-full"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs">
-                      {member.displayName.charAt(0)}
-                    </div>
-                  )}
-                  <span className="text-sm flex-1 truncate">{member.displayName}</span>
-                  {isNew && (
-                    <Badge className="text-[10px] bg-blue-500 text-white animate-pulse px-1.5 py-0">
-                      Nieuw
-                    </Badge>
-                  )}
-                  {member.role === 'owner' && (
-                    <Badge variant="outline" className="text-xs">Eigenaar</Badge>
-                  )}
-                  {isOwner && member.uid !== user.uid && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => setRemovingMemberUid(member.uid)}
-                    >
-                      <UserMinus className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Remove member confirmation */}
-        <Dialog open={!!removingMemberUid} onOpenChange={(open) => !open && setRemovingMemberUid(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Lid verwijderen?</DialogTitle>
-            </DialogHeader>
-            <p className="text-sm text-muted-foreground">
-              Weet je zeker dat je{' '}
-              <strong>{removingMemberUid && currentGroup.members[removingMemberUid]?.displayName}</strong>{' '}
-              uit de groep wilt verwijderen?
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setRemovingMemberUid(null)}>Annuleren</Button>
-              <Button variant="destructive" onClick={handleRemoveMember} disabled={loading}>
-                {loading ? 'Bezig...' : 'Verwijderen'}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Invite code */}
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-            Uitnodigingscode
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 rounded bg-muted px-3 py-2 text-center font-mono text-lg tracking-widest">
-              {currentGroup.inviteCode}
-            </code>
-            <Button variant="outline" size="icon" onClick={handleCopyCode}>
-              <Copy className="h-4 w-4" />
-            </Button>
-            {isOwner && (
-              <Button variant="outline" size="icon" onClick={handleRegenerateCode}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-          {copied && <p className="text-xs text-muted-foreground">Gekopieerd!</p>}
-        </div>
-
-        {/* Leave / Delete */}
-        <div className="space-y-2 pt-2 border-t">
-          <Dialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="w-full justify-start gap-2 text-destructive">
-                <LogIn className="h-4 w-4 rotate-180" />
-                Groep verlaten
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Groep verlaten?</DialogTitle>
-              </DialogHeader>
-              <p className="text-sm text-muted-foreground">
-                Je standaardlijst wordt teruggezet naar een kopie van de groepslijst.
-                {isOwner && members.length > 1 && ' Het eigenaarschap wordt overgedragen.'}
-              </p>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setShowLeaveConfirm(false)}>Annuleren</Button>
-                <Button variant="destructive" onClick={handleLeave} disabled={loading}>
-                  {loading ? 'Bezig...' : 'Verlaten'}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {isOwner && (
-            <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-              <DialogTrigger asChild>
-                <Button variant="destructive" className="w-full justify-start gap-2">
-                  <Trash2 className="h-4 w-4" />
-                  Groep verwijderen
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Groep verwijderen?</DialogTitle>
-                </DialogHeader>
-                <p className="text-sm text-muted-foreground">
-                  Dit verwijdert de groep permanent. Alle leden worden losgekoppeld.
-                </p>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>Annuleren</Button>
-                  <Button variant="destructive" onClick={handleDelete} disabled={loading}>
-                    {loading ? 'Bezig...' : 'Verwijderen'}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-      </CardContent>
-    </Card>
+    </div>
   );
 }

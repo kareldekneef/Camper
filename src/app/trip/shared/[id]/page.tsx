@@ -42,7 +42,7 @@ export default function SharedTripDetailPage({
   const sharedTripItems = useAppStore((s) => s.sharedTripItems);
   const setSharedTrips = useAppStore((s) => s.setSharedTrips);
   const categories = useAppStore((s) => s.categories);
-  const currentGroup = useAppStore((s) => s.currentGroup);
+  const groups = useAppStore((s) => s.groups);
 
   const trip = sharedTrips.find((t) => t.id === id);
   const tripItems = sharedTripItems.filter((ti) => ti.tripId === id);
@@ -98,8 +98,9 @@ export default function SharedTripDetailPage({
     }
   };
 
-  const creator = creatorId && currentGroup
-    ? currentGroup.members[creatorId]
+  const tripGroup = groups.find((g) => g.id === trip.groupId);
+  const creator = creatorId && tripGroup
+    ? tripGroup.members[creatorId]
     : null;
 
   const groupedItems = new Map<string, TripItem[]>();

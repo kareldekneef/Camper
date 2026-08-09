@@ -239,7 +239,7 @@ function SharedTripCard({ trip, creatorName, userUid }: { trip: Trip; creatorNam
 
 export default function HomePage() {
   const trips = useAppStore((s) => s.trips);
-  const currentGroup = useAppStore((s) => s.currentGroup);
+  const groups = useAppStore((s) => s.groups);
   const sharedTrips = useAppStore((s) => s.sharedTrips);
   const seenSharedTripIds = useAppStore((s) => s.seenSharedTripIds);
   const markSharedTripsSeen = useAppStore((s) => s.markSharedTripsSeen);
@@ -249,9 +249,9 @@ export default function HomePage() {
   const completedTrips = trips.filter((t) => t.status === 'completed');
 
   const newSharedTripsCount = useMemo(() => {
-    if (!currentGroup || sharedTrips.length === 0) return 0;
+    if (sharedTrips.length === 0) return 0;
     return sharedTrips.filter((t) => !seenSharedTripIds.includes(t.id)).length;
-  }, [currentGroup, sharedTrips, seenSharedTripIds]);
+  }, [sharedTrips, seenSharedTripIds]);
 
   // Mark as seen after 2 seconds on the page (user has viewed them)
   useEffect(() => {
@@ -279,7 +279,7 @@ export default function HomePage() {
         </Button>
       </Link>
 
-      {trips.length === 0 && !(currentGroup && sharedTrips.length > 0) ? (
+      {trips.length === 0 && sharedTrips.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
           <p className="text-4xl mb-2">🏕️</p>
           <p className="text-muted-foreground">
@@ -310,7 +310,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {currentGroup && sharedTrips.length > 0 && (
+          {sharedTrips.length > 0 && (
             <div className="space-y-3">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <UsersRound className="h-5 w-5 text-blue-600" />
@@ -324,8 +324,9 @@ export default function HomePage() {
               {sharedTrips
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                 .map((trip) => {
+                  const tripGroup = groups.find((g) => g.id === trip.groupId);
                   const creator = trip.creatorId
-                    ? currentGroup.members[trip.creatorId]
+                    ? tripGroup?.members[trip.creatorId]
                     : null;
                   return (
                     <SharedTripCard

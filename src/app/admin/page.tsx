@@ -219,14 +219,11 @@ export default function AdminPage() {
                         <Badge variant="secondary" className="text-xs">
                           {u.tripCount} trip{u.tripCount !== 1 ? 's' : ''}
                         </Badge>
-                        {u.groupId && u.groupName && (
-                          <Badge variant="outline" className="text-xs">
-                            {u.groupName} ({u.groupMemberCount} leden)
+                        {u.groups.map((g) => (
+                          <Badge key={g.id} variant="outline" className="text-xs">
+                            {g.name} ({g.memberCount} leden)
                           </Badge>
-                        )}
-                        {u.groupId && !u.groupName && (
-                          <Badge variant="outline" className="text-xs">Groep</Badge>
-                        )}
+                        ))}
                       </div>
                     </div>
 

@@ -20,13 +20,17 @@ export interface AdminTripRecord {
   itemCount: number;
 }
 
+export interface AdminGroupInfo {
+  id: string;
+  name: string;
+  memberCount: number;
+}
+
 export interface AdminUserRecord {
   uid: string;
   displayName: string;
   email: string;
-  groupId?: string;
-  groupName?: string;
-  groupMemberCount?: number;
+  groups: AdminGroupInfo[];
   tripCount: number;
   trips: AdminTripRecord[];
 }
@@ -79,7 +83,9 @@ export async function fetchAllUsers(): Promise<{
     usersSnap.docs.map(async (userDoc) => {
       const uid = userDoc.id;
       const userData = userDoc.data();
-      const groupId = userData.groupId as string | undefined;
+      const groupIds: string[] =
+        (userData.groupIds as string[] | undefined) ??
+        (userData.groupId ? [userData.groupId as string] : []);
 
       const [tripsSnap, tripItemsSnap] = await Promise.all([
         getDocs(collection(db, 'users', uid, 'trips')),
@@ -109,15 +115,18 @@ export async function fetchAllUsers(): Promise<{
       totalItems += tripItemsSnap.size;
 
       const memberInfo = memberInfoMap.get(uid);
-      const groupInfo = groupId ? groupInfoMap.get(groupId) : undefined;
+      const userGroups: AdminGroupInfo[] = groupIds
+        .map((gid) => {
+          const info = groupInfoMap.get(gid);
+          return info ? { id: gid, name: info.name, memberCount: info.memberCount } : null;
+        })
+        .filter((g): g is AdminGroupInfo => g !== null);
 
       return {
         uid,
         displayName: memberInfo?.displayName ?? uid,
         email: memberInfo?.email ?? '(geen email)',
-        groupId,
-        groupName: groupInfo?.name,
-        groupMemberCount: groupInfo?.memberCount,
+        groups: userGroups,
         tripCount: trips.length,
         trips,
       };

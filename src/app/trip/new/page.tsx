@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -44,6 +44,7 @@ export default function NewTripPage() {
   const { user } = useAuth();
   const createTrip = useAppStore((s) => s.createTrip);
   const currentGroup = useAppStore((s) => s.currentGroup);
+  const groups = useAppStore((s) => s.groups);
   const customActivities = useAppStore((s) => s.customActivities);
 
   const [name, setName] = useState('');
@@ -53,33 +54,22 @@ export default function NewTripPage() {
   const [temperature, setTemperature] = useState<Temperature>('mixed');
   const [peopleCount, setPeopleCount] = useState(2);
   const [activities, setActivities] = useState<Activity[]>(['relaxation']);
-  const [shareWithGroup, setShareWithGroup] = useState(true);
-  const [memberPermissions, setMemberPermissions] = useState<Record<string, TripPermission>>(() => {
-    if (!currentGroup) return {};
-    return Object.fromEntries(
-      Object.keys(currentGroup.members)
-        .filter(uid => uid !== user?.uid)
-        .map(uid => [uid, 'view' as const])
-    );
-  });
+  // undefined = not touched yet → default to the active group; otherwise the user's explicit pick (null = "don't share")
+  const [touchedGroupId, setTouchedGroupId] = useState<string | null | undefined>(undefined);
+  const selectedGroup =
+    touchedGroupId !== undefined
+      ? groups.find((g) => g.id === touchedGroupId) ?? null
+      : currentGroup;
+  // Sparse per-member permission overrides; unlisted members default to 'view'.
+  const [permissionOverrides, setPermissionOverrides] = useState<Record<string, TripPermission>>({});
 
-  // If currentGroup loaded after mount (Firestore sync), initialize permissions reactively
-  useEffect(() => {
-    if (!currentGroup || !user) return;
-    setMemberPermissions(prev => {
-      if (Object.keys(prev).length > 0) return prev;
-      return Object.fromEntries(
-        Object.keys(currentGroup.members)
-          .filter(uid => uid !== user.uid)
-          .map(uid => [uid, 'view' as const])
-      );
-    });
-  }, [currentGroup, user]);
+  const getMemberPermission = (uid: string): TripPermission =>
+    permissionOverrides[uid] === 'edit' ? 'edit' : 'view';
 
   const toggleMemberPermission = (uid: string) => {
-    setMemberPermissions(prev => ({
+    setPermissionOverrides((prev) => ({
       ...prev,
-      [uid]: prev[uid] === 'edit' ? 'view' : 'edit',
+      [uid]: getMemberPermission(uid) === 'edit' ? 'view' : 'edit',
     }));
   };
 
@@ -129,8 +119,16 @@ export default function NewTripPage() {
       peopleCount,
       activities,
       creatorId: user?.uid,
-      shareWithGroup: currentGroup ? shareWithGroup : false,
-      ...(currentGroup && shareWithGroup ? { permissions: memberPermissions } : {}),
+      groupId: selectedGroup?.id ?? null,
+      ...(selectedGroup
+        ? {
+            permissions: Object.fromEntries(
+              Object.keys(selectedGroup.members)
+                .filter((uid) => uid !== user?.uid)
+                .map((uid) => [uid, getMemberPermission(uid)])
+            ),
+          }
+        : {}),
     });
 
     router.push(`/trip/${tripId}`);
@@ -312,46 +310,69 @@ export default function NewTripPage() {
           </CardContent>
         </Card>
 
-        {currentGroup && (
+        {groups.length > 0 && (
           <Card>
-            <CardContent className="pt-6">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Delen</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-2">
               <button
                 type="button"
-                onClick={() => setShareWithGroup(!shareWithGroup)}
+                onClick={() => setTouchedGroupId(null)}
                 className={cn(
                   'flex items-center gap-3 rounded-lg border p-4 w-full text-left transition-colors',
-                  shareWithGroup
-                    ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30'
-                    : 'border-border'
+                  !selectedGroup ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30' : 'border-border'
                 )}
               >
                 <UsersRound className={cn(
                   'h-5 w-5 shrink-0',
-                  shareWithGroup ? 'text-blue-600' : 'text-muted-foreground'
+                  !selectedGroup ? 'text-blue-600' : 'text-muted-foreground'
                 )} />
                 <div className="flex-1">
-                  <p className={cn(
-                    'text-sm font-medium',
-                    shareWithGroup ? 'text-blue-700 dark:text-blue-300' : ''
-                  )}>
-                    Deel met groep
+                  <p className={cn('text-sm font-medium', !selectedGroup ? 'text-blue-700 dark:text-blue-300' : '')}>
+                    Niet delen
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {shareWithGroup
-                      ? `Zichtbaar voor ${currentGroup.name}`
-                      : 'Alleen voor jou zichtbaar'}
-                  </p>
+                  <p className="text-xs text-muted-foreground">Alleen voor jou zichtbaar</p>
                 </div>
-                {shareWithGroup && <Check className="h-5 w-5 text-blue-600 shrink-0" />}
+                {!selectedGroup && <Check className="h-5 w-5 text-blue-600 shrink-0" />}
               </button>
 
+              {groups.map((group) => {
+                const isSelected = selectedGroup?.id === group.id;
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => setTouchedGroupId(group.id)}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg border p-4 w-full text-left transition-colors',
+                      isSelected ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30' : 'border-border'
+                    )}
+                  >
+                    <UsersRound className={cn(
+                      'h-5 w-5 shrink-0',
+                      isSelected ? 'text-blue-600' : 'text-muted-foreground'
+                    )} />
+                    <div className="flex-1">
+                      <p className={cn('text-sm font-medium', isSelected ? 'text-blue-700 dark:text-blue-300' : '')}>
+                        {group.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Zichtbaar voor {Object.keys(group.members).length} leden
+                      </p>
+                    </div>
+                    {isSelected && <Check className="h-5 w-5 text-blue-600 shrink-0" />}
+                  </button>
+                );
+              })}
+
               {/* Per-member permission picker */}
-              {shareWithGroup && (
+              {selectedGroup && (
                 <div className="mt-3 space-y-2">
                   <p className="text-xs text-muted-foreground font-medium">Rechten per lid</p>
-                  {Object.entries(currentGroup.members).map(([uid, member]) => {
+                  {Object.entries(selectedGroup.members).map(([uid, member]) => {
                     const isCreator = uid === user?.uid;
-                    const permission = isCreator ? 'owner' : (memberPermissions[uid] || 'view');
+                    const permission = isCreator ? 'owner' : getMemberPermission(uid);
 
                     return (
                       <div key={uid} className="flex items-center justify-between py-1.5">

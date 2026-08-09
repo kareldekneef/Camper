@@ -37,6 +37,7 @@ import {
   Ban,
 } from 'lucide-react';
 import { SortableList, SortableItem, DragHandle } from '@/components/sortable-list';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { MasterItem, Temperature, Activity } from '@/lib/types';
 import { temperatureLabels, getAllActivities, getActivityLabel } from '@/lib/constants';
@@ -55,6 +56,7 @@ export default function MasterListPage() {
   const deleteCategory = useAppStore((s) => s.deleteCategory);
   const reorderCategories = useAppStore((s) => s.reorderCategories);
   const currentGroup = useAppStore((s) => s.currentGroup);
+  const groups = useAppStore((s) => s.groups);
   const personalBackupItems = useAppStore((s) => s.personalBackupItems);
   const addPersonalItemToGroup = useAppStore((s) => s.addPersonalItemToGroup);
   const addCustomActivity = useAppStore((s) => s.addCustomActivity);
@@ -266,8 +268,16 @@ export default function MasterListPage() {
         </div>
         <p className="text-sm text-muted-foreground">
           {currentGroup
-            ? 'Gedeelde lijst van je groep. Wijzigingen zijn zichtbaar voor alle leden.'
+            ? 'Gedeelde lijst van je actieve groep. Wijzigingen zijn zichtbaar voor alle leden.'
             : 'Beheer je standaard paklijst. Sleep items om te herordenen.'}
+          {groups.length > 1 && (
+            <>
+              {' '}
+              <Link href="/settings" className="underline underline-offset-2">
+                Andere groep actief maken
+              </Link>
+            </>
+          )}
         </p>
       </div>
 
