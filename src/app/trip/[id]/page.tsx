@@ -66,6 +66,7 @@ import { TripItem, Activity, Duration, Temperature, TripPermission } from '@/lib
 import { shouldIncludeItem } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
 import { syncCollectionToFirestore } from '@/lib/firestore-sync';
+import { TripSharingPicker } from '@/components/trip-sharing-picker';
 
 type FilterMode = 'all' | 'unchecked' | 'shopping' | 'forgotten';
 type SortMode = 'default' | 'alpha' | 'packed';
@@ -1209,10 +1210,13 @@ function EditTripDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateTrip = useAppStore((s) => s.updateTrip);
+  const setTripGroup = useAppStore((s) => s.setTripGroup);
   const regenerateTripItems = useAppStore((s) => s.regenerateTripItems);
   const masterItems = useAppStore((s) => s.masterItems);
   const allTripItems = useAppStore((s) => s.tripItems);
   const customActivities = useAppStore((s) => s.customActivities);
+  const groups = useAppStore((s) => s.groups);
+  const { user } = useAuth();
 
   const [name, setName] = useState(trip.name);
   const [destination, setDestination] = useState(trip.destination);
@@ -1225,6 +1229,23 @@ function EditTripDialog({
   const [notes, setNotes] = useState(trip.notes || '');
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<{ added: number; removed: number } | null>(null);
+
+  // Sharing: does the trip's current group still resolve locally?
+  const currentTripGroupKnown = !trip.groupId || groups.some((g) => g.id === trip.groupId);
+  const [touchedGroupId, setTouchedGroupId] = useState<string | null | undefined>(undefined);
+  const selectedGroupId =
+    touchedGroupId !== undefined ? touchedGroupId : (trip.groupId ?? null);
+  const [permissionOverrides, setPermissionOverrides] = useState<Record<string, TripPermission>>(
+    trip.permissions ?? {}
+  );
+  const getMemberPermission = (uid: string): TripPermission =>
+    permissionOverrides[uid] === 'edit' ? 'edit' : 'view';
+  const toggleMemberPermission = (uid: string) => {
+    setPermissionOverrides((prev) => ({
+      ...prev,
+      [uid]: getMemberPermission(uid) === 'edit' ? 'view' : 'edit',
+    }));
+  };
 
   const allActivitiesList = getAllActivities(customActivities);
 
@@ -1300,6 +1321,22 @@ function EditTripDialog({
       activities,
       notes: notes.trim() || undefined,
     });
+    if (user && currentTripGroupKnown) {
+      const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
+      setTripGroup(trip.id, {
+        groupId: selectedGroup?.id ?? null,
+        uid: user.uid,
+        ...(selectedGroup
+          ? {
+              permissions: Object.fromEntries(
+                Object.keys(selectedGroup.members)
+                  .filter((uid) => uid !== (trip.creatorId ?? user.uid))
+                  .map((uid) => [uid, getMemberPermission(uid)])
+              ),
+            }
+          : {}),
+      });
+    }
     if (regenerate) {
       regenerateTripItems(trip.id, { temperature, duration, peopleCount, activities });
     }
@@ -1462,6 +1499,21 @@ function EditTripDialog({
               rows={4}
             />
           </div>
+
+          {currentTripGroupKnown ? (
+            <TripSharingPicker
+              groups={groups}
+              selectedGroupId={selectedGroupId}
+              onSelectGroup={setTouchedGroupId}
+              getMemberPermission={getMemberPermission}
+              onTogglePermission={toggleMemberPermission}
+              currentUserUid={trip.creatorId ?? user?.uid}
+            />
+          ) : (
+            <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              Deze trip is gedeeld met een groep waar je niet meer bij bent — het delen kan hier niet aangepast worden.
+            </div>
+          )}
 
           <Button onClick={handleSave} className="w-full">
             Opslaan

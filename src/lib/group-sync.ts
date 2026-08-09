@@ -113,6 +113,19 @@ export async function fetchGroup(groupId: string): Promise<Group | null> {
   return { id: groupDoc.id, ...groupDoc.data() } as Group;
 }
 
+// --- Resolve an invite code to a group, without needing to read the groups
+// collection directly (a `get` on a known-id doc, never a `list`/scan — see
+// firestore.rules `inviteCodes/{code}`) ---
+
+export async function fetchGroupByInviteCode(
+  inviteCode: string
+): Promise<{ groupId: string; groupName: string } | null> {
+  const mappingDoc = await getDoc(doc(db, 'inviteCodes', inviteCode.toUpperCase()));
+  if (!mappingDoc.exists()) return null;
+  const data = mappingDoc.data();
+  return { groupId: data.groupId as string, groupName: data.groupName as string };
+}
+
 // --- Download group's master data ---
 
 export async function downloadGroupMasterData(groupId: string): Promise<{
@@ -207,8 +220,11 @@ export async function createGroup(
     createdAt: new Date().toISOString(),
   };
 
-  // Create group document
-  await setDoc(doc(db, 'groups', groupId), group);
+  // Create group document + its invite-code lookup mapping
+  await Promise.all([
+    setDoc(doc(db, 'groups', groupId), group),
+    setDoc(doc(db, 'inviteCodes', inviteCode), { groupId, groupName: name }),
+  ]);
 
   // Copy personal master list to group
   const allOps: Array<{ ref: ReturnType<typeof doc>; data: Record<string, unknown> }> = [];
@@ -257,38 +273,37 @@ export async function joinGroup(
   inviteCode: string,
   user: User
 ): Promise<Group> {
-  // Find group by invite code
-  const groupsSnap = await getDocs(
-    query(collection(db, 'groups'), where('inviteCode', '==', inviteCode.toUpperCase()))
-  );
-
-  if (groupsSnap.empty) {
+  // Resolve the code via the get-only lookup mapping (no broad group read needed yet)
+  const mapping = await fetchGroupByInviteCode(inviteCode);
+  if (!mapping) {
     throw new Error('Ongeldige uitnodigingscode');
   }
 
-  const groupDoc = groupsSnap.docs[0];
-  const group = { id: groupDoc.id, ...groupDoc.data() } as Group;
-
-  // Check if already a member
-  if (group.members[uid]) {
+  // Already a member? Check via our own membership list — reading the group's
+  // `members` map directly isn't allowed pre-join under the current rules.
+  const myGroupIds = await fetchUserGroupIds(uid);
+  if (myGroupIds.includes(mapping.groupId)) {
     throw new Error('Je bent al lid van deze groep');
   }
 
-  // Add user as member
+  // Add ourselves as a member (blind write — allowed for self-adds even without prior read access)
   const member = memberFromUser(user, 'member');
-  await updateDoc(doc(db, 'groups', group.id), {
+  await updateDoc(doc(db, 'groups', mapping.groupId), {
     [`members.${uid}`]: member,
   });
 
   // Add group to this user's memberships and make it the active one
   await setDoc(
     doc(db, 'users', uid),
-    { groupIds: arrayUnion(group.id), activeGroupId: group.id },
+    { groupIds: arrayUnion(mapping.groupId), activeGroupId: mapping.groupId },
     { merge: true }
   );
 
-  // Return updated group
-  group.members[uid] = member;
+  // Now readable — we just became a member
+  const group = await fetchGroup(mapping.groupId);
+  if (!group) {
+    throw new Error('Groep niet gevonden');
+  }
   return group;
 }
 
@@ -316,7 +331,7 @@ export async function leaveGroup(uid: string, groupId: string): Promise<void> {
     });
   } else {
     // Last member — delete the group and its sub-collections
-    await deleteGroupData(groupId);
+    await deleteGroupData(groupId, group.inviteCode);
   }
 
   // Update this user's group memberships — drop this group, and if it was the
@@ -383,16 +398,36 @@ export async function deleteGroup(uid: string, groupId: string): Promise<void> {
     throw new Error('Alleen de eigenaar kan de groep verwijderen');
   }
 
-  // Remove this group from every member's memberships, falling back to
-  // another remaining group (or personal mode) wherever it was active.
+  await removeGroupFromAllMembers(group);
+
+  // Delete group and sub-collections
+  await deleteGroupData(groupId, group.inviteCode);
+}
+
+// --- Delete a group (admin only — no ownership check) ---
+
+export async function adminDeleteGroup(groupId: string): Promise<void> {
+  const group = await fetchGroup(groupId);
+  if (!group) return;
+
+  await removeGroupFromAllMembers(group);
+  await deleteGroupData(groupId, group.inviteCode);
+}
+
+// --- Remove a group from every member's own membership bookkeeping,
+// falling back to another remaining group (or personal mode) wherever it
+// was active. Shared by the owner-driven deleteGroup and the admin path
+// (admin-sync.ts adminDeleteGroup). ---
+
+export async function removeGroupFromAllMembers(group: Group): Promise<void> {
   for (const memberUid of Object.keys(group.members)) {
     try {
       const [ids, activeId] = await Promise.all([
         fetchUserGroupIds(memberUid),
         fetchUserActiveGroupId(memberUid),
       ]);
-      const remaining = ids.filter((id) => id !== groupId);
-      const newActive = activeId === groupId ? remaining[0] ?? null : activeId;
+      const remaining = ids.filter((id) => id !== group.id);
+      const newActive = activeId === group.id ? remaining[0] ?? null : activeId;
       await setDoc(
         doc(db, 'users', memberUid),
         {
@@ -406,14 +441,11 @@ export async function deleteGroup(uid: string, groupId: string): Promise<void> {
       // Best-effort cleanup — a stale membership entry is harmless.
     }
   }
-
-  // Delete group and sub-collections
-  await deleteGroupData(groupId);
 }
 
-// --- Delete group document and sub-collections ---
+// --- Delete group document, its invite-code mapping, and sub-collections ---
 
-async function deleteGroupData(groupId: string): Promise<void> {
+async function deleteGroupData(groupId: string, inviteCode?: string): Promise<void> {
   const subCollections = ['categories', 'masterItems', 'customActivities'] as const;
 
   for (const collectionName of subCollections) {
@@ -430,6 +462,11 @@ async function deleteGroupData(groupId: string): Promise<void> {
     }
   }
 
+  // Delete the invite-code mapping BEFORE the group doc — its rules check
+  // ownership by reading the group doc, which would fail once it's gone.
+  if (inviteCode) {
+    await deleteDoc(doc(db, 'inviteCodes', inviteCode)).catch(() => {});
+  }
   await deleteDoc(doc(db, 'groups', groupId));
 }
 
@@ -446,8 +483,15 @@ export async function updateSharedTripItem(
 // --- Regenerate invite code ---
 
 export async function regenerateInviteCode(groupId: string): Promise<string> {
+  const group = await fetchGroup(groupId);
+  if (!group) throw new Error('Groep niet gevonden');
+
   const newCode = generateInviteCode();
-  await updateDoc(doc(db, 'groups', groupId), { inviteCode: newCode });
+  await Promise.all([
+    updateDoc(doc(db, 'groups', groupId), { inviteCode: newCode }),
+    setDoc(doc(db, 'inviteCodes', newCode), { groupId, groupName: group.name }),
+    deleteDoc(doc(db, 'inviteCodes', group.inviteCode)).catch(() => {}),
+  ]);
   return newCode;
 }
 
@@ -466,6 +510,14 @@ export async function removeMember(
     throw new Error('Je kunt jezelf niet verwijderen');
   }
 
+  await removeMemberFromGroup(groupId, memberUid);
+}
+
+// --- Remove a member's group.members entry + fix their own membership
+// bookkeeping. No ownership check — shared by the owner-gated removeMember
+// wrapper above and the admin path (admin-sync.ts adminRemoveGroupMember). ---
+
+export async function removeMemberFromGroup(groupId: string, memberUid: string): Promise<void> {
   await updateDoc(doc(db, 'groups', groupId), {
     [`members.${memberUid}`]: deleteField(),
   });

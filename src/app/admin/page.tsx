@@ -4,11 +4,14 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import {
   fetchAllUsers,
+  fetchAllGroups,
   deleteUserData,
   deleteTripAdmin,
   AdminUserRecord,
   AdminStats,
 } from '@/lib/admin-sync';
+import { adminDeleteGroup, removeMemberFromGroup, regenerateInviteCode } from '@/lib/group-sync';
+import { Group } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +32,9 @@ import {
   RotateCcw,
   ShieldAlert,
   ArrowLeft,
+  UserMinus,
+  RefreshCw,
+  Copy,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -39,6 +45,8 @@ const ADMIN_EMAIL = 'karel@dekneef.be';
 type ConfirmAction =
   | { type: 'deleteTrip'; uid: string; tripId: string; tripName: string; userName: string }
   | { type: 'deleteUser'; uid: string; displayName: string }
+  | { type: 'deleteGroup'; groupId: string; groupName: string }
+  | { type: 'removeGroupMember'; groupId: string; memberUid: string; memberName: string; groupName: string }
   | null;
 
 const statusLabels: Record<string, string> = {
@@ -58,18 +66,23 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [groupsList, setGroupsList] = useState<Group[]>([]);
   const [expandedUids, setExpandedUids] = useState<Set<string>>(new Set());
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [regeneratingGroupId, setRegeneratingGroupId] = useState<string | null>(null);
+  const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
 
   const isAdmin = user?.email === ADMIN_EMAIL;
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const result = await fetchAllUsers();
-      setUsers(result.users);
-      setStats(result.stats);
+      const [usersResult, groups] = await Promise.all([fetchAllUsers(), fetchAllGroups()]);
+      setUsers(usersResult.users);
+      setStats(usersResult.stats);
+      setGroupsList(groups);
     } catch (err) {
       console.error('Admin fetch failed:', err);
       toast.error('Laden mislukt');
@@ -93,6 +106,14 @@ export default function AdminPage() {
     });
   };
 
+  const toggleGroupExpand = (groupId: string) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      next.has(groupId) ? next.delete(groupId) : next.add(groupId);
+      return next;
+    });
+  };
+
   const handleConfirm = async () => {
     if (!confirmAction) return;
     setActionLoading(true);
@@ -100,9 +121,15 @@ export default function AdminPage() {
       if (confirmAction.type === 'deleteTrip') {
         await deleteTripAdmin(confirmAction.uid, confirmAction.tripId);
         toast.success(`Trip "${confirmAction.tripName}" verwijderd`);
-      } else {
+      } else if (confirmAction.type === 'deleteUser') {
         await deleteUserData(confirmAction.uid);
         toast.success(`Alle data voor ${confirmAction.displayName} verwijderd`);
+      } else if (confirmAction.type === 'deleteGroup') {
+        await adminDeleteGroup(confirmAction.groupId);
+        toast.success(`Groep "${confirmAction.groupName}" verwijderd`);
+      } else if (confirmAction.type === 'removeGroupMember') {
+        await removeMemberFromGroup(confirmAction.groupId, confirmAction.memberUid);
+        toast.success(`${confirmAction.memberName} verwijderd uit ${confirmAction.groupName}`);
       }
       setConfirmAction(null);
       await loadData();
@@ -111,6 +138,30 @@ export default function AdminPage() {
       toast.error('Actie mislukt');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleRegenerateCode = async (group: Group) => {
+    setRegeneratingGroupId(group.id);
+    try {
+      await regenerateInviteCode(group.id);
+      toast.success(`Nieuwe code voor ${group.name}`);
+      await loadData();
+    } catch (err) {
+      console.error('Regenerate code failed:', err);
+      toast.error('Code vernieuwen mislukt');
+    } finally {
+      setRegeneratingGroupId(null);
+    }
+  };
+
+  const handleCopyCode = async (group: Group) => {
+    try {
+      await navigator.clipboard.writeText(group.inviteCode);
+      setCopiedGroupId(group.id);
+      setTimeout(() => setCopiedGroupId(null), 2000);
+    } catch {
+      // ignore
     }
   };
 
@@ -316,6 +367,118 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* Group list */}
+      {!loading && (
+        <div className="space-y-3 mt-8">
+          <h2 className="text-lg font-semibold">Groepen ({groupsList.length})</h2>
+
+          {groupsList.length === 0 && (
+            <p className="text-sm text-muted-foreground">Geen groepen</p>
+          )}
+
+          {groupsList.map((group) => {
+            const isExpanded = expandedGroupIds.has(group.id);
+            const members = Object.values(group.members);
+            return (
+              <Card key={group.id}>
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <div className="flex items-start gap-2">
+                    <button
+                      onClick={() => toggleGroupExpand(group.id)}
+                      className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {isExpanded
+                        ? <ChevronDown className="h-4 w-4" />
+                        : <ChevronRight className="h-4 w-4" />}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{group.name}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        <Badge variant="secondary" className="text-xs">
+                          {members.length} {members.length === 1 ? 'lid' : 'leden'}
+                        </Badge>
+                        <code className="text-xs font-mono tracking-widest px-1.5 py-0.5 rounded bg-muted">
+                          {group.inviteCode}
+                        </code>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => handleCopyCode(group)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      disabled={regeneratingGroupId === group.id}
+                      onClick={() => handleRegenerateCode(group)}
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5', regeneratingGroupId === group.id && 'animate-spin')} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                      onClick={() =>
+                        setConfirmAction({ type: 'deleteGroup', groupId: group.id, groupName: group.name })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {copiedGroupId === group.id && (
+                    <p className="text-xs text-muted-foreground pl-6">Gekopieerd!</p>
+                  )}
+                </CardHeader>
+
+                {isExpanded && (
+                  <CardContent className="pt-0 pb-3 px-3">
+                    <div className="border-t pt-3 space-y-1.5">
+                      {members.map((member) => (
+                        <div
+                          key={member.uid}
+                          className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{member.displayName}</p>
+                            <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                          </div>
+                          {member.role === 'owner' && (
+                            <Badge variant="outline" className="text-xs shrink-0">Eigenaar</Badge>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                            onClick={() =>
+                              setConfirmAction({
+                                type: 'removeGroupMember',
+                                groupId: group.id,
+                                memberUid: member.uid,
+                                memberName: member.displayName,
+                                groupName: group.name,
+                              })
+                            }
+                          >
+                            <UserMinus className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
       {/* Confirmation Dialog */}
       <Dialog
         open={confirmAction !== null}
@@ -324,9 +487,10 @@ export default function AdminPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {confirmAction?.type === 'deleteTrip'
-                ? 'Trip verwijderen?'
-                : 'Alle data verwijderen?'}
+              {confirmAction?.type === 'deleteTrip' && 'Trip verwijderen?'}
+              {confirmAction?.type === 'deleteUser' && 'Alle data verwijderen?'}
+              {confirmAction?.type === 'deleteGroup' && 'Groep verwijderen?'}
+              {confirmAction?.type === 'removeGroupMember' && 'Lid verwijderen?'}
             </DialogTitle>
           </DialogHeader>
 
@@ -344,6 +508,21 @@ export default function AdminPage() {
               <strong>{confirmAction.displayName}</strong> wordt permanent
               verwijderd. Dit omvat alle trips, items, categorieën en
               activiteiten. De gebruiker blijft bestaan in Firebase Auth.
+            </p>
+          )}
+
+          {confirmAction?.type === 'deleteGroup' && (
+            <p className="text-sm text-muted-foreground">
+              Groep <strong>{confirmAction.groupName}</strong> wordt permanent
+              verwijderd, inclusief de gedeelde standaardlijst en uitnodigingscode.
+              Alle leden worden losgekoppeld.
+            </p>
+          )}
+
+          {confirmAction?.type === 'removeGroupMember' && (
+            <p className="text-sm text-muted-foreground">
+              <strong>{confirmAction.memberName}</strong> wordt verwijderd uit{' '}
+              <strong>{confirmAction.groupName}</strong>.
             </p>
           )}
 

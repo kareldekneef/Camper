@@ -71,6 +71,10 @@ interface AppState {
     permissions?: Record<string, TripPermission>;
   }) => string;
   updateTrip: (id: string, updates: Partial<Trip>) => void;
+  setTripGroup: (
+    tripId: string,
+    params: { groupId: string | null; uid: string; permissions?: Record<string, TripPermission> }
+  ) => void;
   deleteTrip: (id: string) => void;
   copyTrip: (tripId: string, newName: string) => string;
   regenerateTripItems: (
@@ -390,6 +394,33 @@ export const useAppStore = create<AppState>()(
           trips: get().trips.map((t) =>
             t.id === id ? { ...t, ...updates } : t
           ),
+        });
+      },
+
+      setTripGroup: (tripId, { groupId, uid, permissions }) => {
+        const state = get();
+        const group = groupId ? state.groups.find((g) => g.id === groupId) : undefined;
+        set({
+          trips: state.trips.map((t) => {
+            if (t.id !== tripId) return t;
+            if (!group) {
+              // Un-share: drop group/creator/sharing fields entirely
+              const { groupId: _groupId, creatorId: _creatorId, sharedWith: _sharedWith, permissions: _permissions, ...rest } = t;
+              return rest as Trip;
+            }
+            const creatorId = t.creatorId ?? uid;
+            return {
+              ...t,
+              groupId: group.id,
+              creatorId,
+              sharedWith: Object.keys(group.members),
+              permissions: permissions ?? Object.fromEntries(
+                Object.keys(group.members)
+                  .filter((memberUid) => memberUid !== creatorId)
+                  .map((memberUid) => [memberUid, 'view' as const])
+              ),
+            };
+          }),
         });
       },
 

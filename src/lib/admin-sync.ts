@@ -7,7 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { clearFirestoreData } from './firestore-sync';
-import { Trip, TripItem } from './types';
+import { Group, Trip, TripItem } from './types';
 
 // --- Admin-only types ---
 
@@ -141,6 +141,15 @@ export async function fetchAllUsers(): Promise<{
       totalItems,
     },
   };
+}
+
+// --- Fetch every group (admin panel "Groepen" section) ---
+
+export async function fetchAllGroups(): Promise<Group[]> {
+  const snap = await getDocs(collection(db, 'groups'));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Group)
+    .sort((a, b) => a.name.localeCompare(b.name, 'nl'));
 }
 
 // --- Delete all data for a user (reuses existing clearFirestoreData) ---

@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Users, Copy, RefreshCw, UserMinus, Trash2, Plus, LogIn, Star } from 'lucide-react';
+import { Users, Copy, RefreshCw, UserMinus, Trash2, Plus, LogIn, Star, Share2 } from 'lucide-react';
 import {
   createGroup,
   joinGroup,
@@ -188,6 +188,25 @@ export function GroupCard() {
     }
   };
 
+  const handleShareLink = async (group: Group) => {
+    const link = `${window.location.origin}/join/${group.inviteCode}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `Deelnemen aan ${group.name} — CamperPack`, url: link });
+        return;
+      } catch {
+        // User cancelled or share failed, fall through to clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedGroupId(group.id);
+      setTimeout(() => setCopiedGroupId(null), 2000);
+    } catch {
+      // ignore — link is at least visible via the code above
+    }
+  };
+
   return (
     <div className="space-y-4">
       {groups.map((group) => {
@@ -303,6 +322,15 @@ export function GroupCard() {
                     </Button>
                   )}
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => handleShareLink(group)}
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  Deel uitnodigingslink
+                </Button>
                 {copiedGroupId === group.id && <p className="text-xs text-muted-foreground">Gekopieerd!</p>}
               </div>
 
