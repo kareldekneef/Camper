@@ -135,7 +135,9 @@ export default function AdminPage() {
         await withTimeout(deleteTripAdmin(confirmAction.uid, confirmAction.tripId), 20000);
         toast.success(`Trip "${confirmAction.tripName}" verwijderd`);
       } else if (confirmAction.type === 'deleteUser') {
-        await withTimeout(deleteUserData(confirmAction.uid), 20000);
+        // deleteUserData now times out per-step internally (up to ~6 steps),
+        // so give it enough room to run that through before we give up outer-wrap.
+        await withTimeout(deleteUserData(confirmAction.uid), 60000);
         toast.success(`Alle data voor ${confirmAction.displayName} verwijderd`);
       } else if (confirmAction.type === 'deleteGroup') {
         await withTimeout(adminDeleteGroup(confirmAction.groupId), 20000);

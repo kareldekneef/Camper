@@ -212,28 +212,63 @@ export async function syncGroupCollection<T extends { id: string }>(
   }
 }
 
+// A single Firestore write/read can hang indefinitely (never resolve or reject)
+// rather than erroring out promptly, e.g. on a connectivity hiccup — this app
+// uses offline persistence, which is known to do exactly that. Race each step
+// against a timeout so one stuck step doesn't block everything after it.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label}: duurde te lang (timeout)`)), ms)
+    ),
+  ]);
+}
+
 // --- Clear all Firestore data for a user (subcollections + the root profile doc) ---
+// Times out per step rather than as one big operation, so a single stuck step
+// doesn't block the rest — collects failures and reports them together at the
+// end instead of leaving the caller with no idea what actually happened.
 
 export async function clearFirestoreData(uid: string): Promise<void> {
   const collections: CollectionName[] = ['categories', 'masterItems', 'trips', 'tripItems', 'customActivities'];
+  const failures: string[] = [];
 
   for (const collectionName of collections) {
-    const snap = await getDocs(collection(db, 'users', uid, collectionName));
-    if (snap.empty) continue;
+    try {
+      const snap = await withTimeout(
+        getDocs(collection(db, 'users', uid, collectionName)),
+        8000,
+        `${collectionName} ophalen`
+      );
+      if (snap.empty) continue;
 
-    // Delete in chunks of 499
-    const docs = snap.docs;
-    for (let i = 0; i < docs.length; i += 499) {
-      const chunk = docs.slice(i, i + 499);
-      const batch = writeBatch(db);
-      for (const d of chunk) {
-        batch.delete(d.ref);
+      // Delete in chunks of 499
+      const docs = snap.docs;
+      for (let i = 0; i < docs.length; i += 499) {
+        const chunk = docs.slice(i, i + 499);
+        const batch = writeBatch(db);
+        for (const d of chunk) {
+          batch.delete(d.ref);
+        }
+        await withTimeout(batch.commit(), 8000, `${collectionName} verwijderen`);
       }
-      await batch.commit();
+    } catch (error) {
+      console.error(`clearFirestoreData: ${collectionName} failed:`, error);
+      failures.push(collectionName);
     }
   }
 
   // Also remove the root profile doc (displayName/email/groupIds/...) — without
   // this, a "deleted" user still shows up in the admin panel's user list.
-  await deleteDoc(doc(db, 'users', uid)).catch(() => {});
+  try {
+    await withTimeout(deleteDoc(doc(db, 'users', uid)), 8000, 'profiel verwijderen');
+  } catch (error) {
+    console.error('clearFirestoreData: root profile doc failed:', error);
+    failures.push('profiel');
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Niet alles kon verwijderd worden (timeout): ${failures.join(', ')}`);
+  }
 }
