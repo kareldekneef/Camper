@@ -23,6 +23,7 @@ import {
   regenerateInviteCode,
   removeMember,
   switchActiveGroup,
+  fetchSharedTrips,
 } from '@/lib/group-sync';
 import { Group } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -87,6 +88,19 @@ export function GroupCard() {
       const group = await joinGroup(user.uid, inviteInput.trim(), user);
       setGroups([...groups, group]);
       setCurrentGroup(group);
+
+      // Immediately pull in this group's shared trips — otherwise they only
+      // show up after the next full app reopen/visibility refresh.
+      const otherUids = Object.keys(group.members).filter((uid) => uid !== user.uid);
+      if (otherUids.length > 0) {
+        const shared = await fetchSharedTrips(group.id, user.uid, otherUids);
+        const state = useAppStore.getState();
+        useAppStore.setState({
+          sharedTrips: [...state.sharedTrips, ...shared.trips],
+          sharedTripItems: [...state.sharedTripItems, ...shared.tripItems],
+        });
+      }
+
       setJoining(false);
       setInviteInput('');
     } catch (e: unknown) {
