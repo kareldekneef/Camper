@@ -4,7 +4,7 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useAppStore } from '@/lib/store';
-import { fetchGroupByInviteCode, fetchSharedTrips, joinGroup } from '@/lib/group-sync';
+import { fetchGroupByInviteCode, fetchSharedTrips, fetchUserGroupIds, joinGroup } from '@/lib/group-sync';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Users } from 'lucide-react';
@@ -23,6 +23,9 @@ export default function JoinGroupPage({
   const setCurrentGroup = useAppStore((s) => s.setCurrentGroup);
 
   const [preview, setPreview] = useState<{ groupId: string; groupName: string } | null | undefined>(undefined);
+  // Checked fresh against Firestore rather than trusting local `groups` state,
+  // which can be stale (e.g. right after being removed from a group elsewhere).
+  const [alreadyMember, setAlreadyMember] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [joinedGroupName, setJoinedGroupName] = useState('');
@@ -33,8 +36,13 @@ export default function JoinGroupPage({
     if (!user) return;
     let cancelled = false;
     fetchGroupByInviteCode(code)
-      .then((result) => {
-        if (!cancelled) setPreview(result);
+      .then(async (result) => {
+        if (cancelled) return;
+        setPreview(result);
+        if (result) {
+          const myGroupIds = await fetchUserGroupIds(user.uid);
+          if (!cancelled) setAlreadyMember(myGroupIds.includes(result.groupId));
+        }
       })
       .catch(() => {
         if (!cancelled) setPreview(null);
@@ -85,8 +93,6 @@ export default function JoinGroupPage({
       setJoining(false);
     }
   };
-
-  const alreadyMember = preview ? groups.some((g) => g.id === preview.groupId) : false;
 
   return (
     <div className="mx-auto max-w-lg px-4 pt-6">

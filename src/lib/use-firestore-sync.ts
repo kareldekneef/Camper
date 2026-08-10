@@ -547,6 +547,22 @@ export function useFirestoreSync(user: User | null) {
         },
         (error) => {
           console.error('Group snapshot listener error:', error);
+          // We lose read access the moment we're removed from a group (or it's
+          // deleted) — the listener errors instead of delivering an update, so
+          // clean up locally ourselves rather than leaving stale membership.
+          if ((error as { code?: string }).code === 'permission-denied') {
+            const state = useAppStore.getState();
+            const removedTripIds = new Set(
+              state.sharedTrips.filter((t) => t.groupId === groupId).map((t) => t.id)
+            );
+            const remainingGroups = state.groups.filter((g) => g.id !== groupId);
+            useAppStore.setState({
+              groups: remainingGroups,
+              currentGroup: state.currentGroup?.id === groupId ? remainingGroups[0] ?? null : state.currentGroup,
+              sharedTrips: state.sharedTrips.filter((t) => t.groupId !== groupId),
+              sharedTripItems: state.sharedTripItems.filter((ti) => !removedTripIds.has(ti.tripId)),
+            });
+          }
         }
       )
     );
