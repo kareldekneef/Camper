@@ -1,5 +1,6 @@
 import {
   collection,
+  collectionGroup,
   doc,
   getDocs,
   deleteDoc,
@@ -47,10 +48,23 @@ export async function fetchAllUsers(): Promise<{
   users: AdminUserRecord[];
   stats: AdminStats;
 }> {
-  // 1. Fetch all user root docs (contain groupId)
+  // 1. Fetch all user root docs (profile info, groupIds — written on every sign-in since
+  // this was added; may still be missing for accounts that haven't reopened the app since).
   const usersSnap = await getDocs(collection(db, 'users'));
+  const userDataById = new Map<string, Record<string, unknown>>();
+  for (const d of usersSnap.docs) userDataById.set(d.id, d.data());
 
-  // 2. Fetch all groups to extract member display info and group names
+  // 1b. Catch any user whose root doc doesn't exist yet (older accounts, pre-profile-write) —
+  // every user gets a 'categories' subcollection on first sync, so a collection-group scan
+  // (filtered to the users/ path, since groups/*/categories also exists) finds them too.
+  const categoriesGroupSnap = await getDocs(collectionGroup(db, 'categories'));
+  for (const d of categoriesGroupSnap.docs) {
+    if (!d.ref.path.startsWith('users/')) continue;
+    const uid = d.ref.parent.parent?.id;
+    if (uid && !userDataById.has(uid)) userDataById.set(uid, {});
+  }
+
+  // 2. Fetch all groups to extract member display info (fallback) and group names
   const groupsSnap = await getDocs(collection(db, 'groups'));
 
   const memberInfoMap = new Map<string, { displayName: string; email: string }>();
@@ -80,9 +94,7 @@ export async function fetchAllUsers(): Promise<{
   let totalItems = 0;
 
   const userRecords: AdminUserRecord[] = await Promise.all(
-    usersSnap.docs.map(async (userDoc) => {
-      const uid = userDoc.id;
-      const userData = userDoc.data();
+    Array.from(userDataById.entries()).map(async ([uid, userData]) => {
       const groupIds: string[] =
         (userData.groupIds as string[] | undefined) ??
         (userData.groupId ? [userData.groupId as string] : []);
@@ -124,8 +136,8 @@ export async function fetchAllUsers(): Promise<{
 
       return {
         uid,
-        displayName: memberInfo?.displayName ?? uid,
-        email: memberInfo?.email ?? '(geen email)',
+        displayName: (userData.displayName as string | undefined) ?? memberInfo?.displayName ?? uid,
+        email: (userData.email as string | undefined) ?? memberInfo?.email ?? '(geen email)',
         groups: userGroups,
         tripCount: trips.length,
         trips,

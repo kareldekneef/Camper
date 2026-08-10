@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAppStore } from './store';
 import { Group, Trip, TripItem } from './types';
@@ -290,6 +290,19 @@ export function useFirestoreSync(user: User | null) {
     async function initSync() {
       isSyncingRef.current = true;
       try {
+        // Ensure the root users/{uid} doc exists with basic profile info — needed so the
+        // admin panel can discover and identify every signed-in user, not just group members
+        // (group membership used to be the only thing that ever wrote this doc).
+        setDoc(
+          doc(db, 'users', user!.uid),
+          {
+            displayName: user!.displayName ?? null,
+            email: user!.email ?? null,
+            photoURL: user!.photoURL ?? null,
+          },
+          { merge: true }
+        ).catch((error) => console.error('Failed to write user profile:', error));
+
         // Upload-first when there are unconfirmed local changes (Scenario A: iOS PWA killed
         // before debounce fired; flag survived the page reload via localStorage).
         const hasPendingSync = localStorage.getItem(PENDING_SYNC_KEY) === '1';
