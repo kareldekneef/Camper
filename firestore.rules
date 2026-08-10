@@ -39,13 +39,16 @@ service cloud.firestore {
       }
     }
 
-    // Admin: full read access to all user docs + subcollections, delete subcollection docs,
-    // and update top-level user docs (needed to clean up groupIds/activeGroupId when admin
+    // Admin: full read access to all user docs + subcollections, delete subcollection docs
+    // and the root profile doc itself (full "delete this user" from the admin panel), and
+    // update top-level user docs (needed to clean up groupIds/activeGroupId when admin
     // removes a member from — or deletes — a group that member can't clean up themselves).
     match /users/{userId} {
       allow read: if request.auth != null
         && request.auth.token.email == 'karel@dekneef.be';
       allow update: if request.auth != null
+        && request.auth.token.email == 'karel@dekneef.be';
+      allow delete: if request.auth != null
         && request.auth.token.email == 'karel@dekneef.be';
 
       match /{subcollection}/{docId} {

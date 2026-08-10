@@ -42,6 +42,19 @@ import { cn } from '@/lib/utils';
 
 const ADMIN_EMAIL = 'karel@dekneef.be';
 
+// Firestore writes can hang indefinitely (never resolve or reject) rather than
+// erroring out promptly when there's a connectivity hiccup — race against a
+// timeout so a destructive admin action always ends up either done or reported
+// as failed, never stuck on "Bezig..." forever.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Duurde te lang — controleer je verbinding en probeer opnieuw.')), ms)
+    ),
+  ]);
+}
+
 type ConfirmAction =
   | { type: 'deleteTrip'; uid: string; tripId: string; tripName: string; userName: string }
   | { type: 'deleteUser'; uid: string; displayName: string }
@@ -119,23 +132,23 @@ export default function AdminPage() {
     setActionLoading(true);
     try {
       if (confirmAction.type === 'deleteTrip') {
-        await deleteTripAdmin(confirmAction.uid, confirmAction.tripId);
+        await withTimeout(deleteTripAdmin(confirmAction.uid, confirmAction.tripId), 20000);
         toast.success(`Trip "${confirmAction.tripName}" verwijderd`);
       } else if (confirmAction.type === 'deleteUser') {
-        await deleteUserData(confirmAction.uid);
+        await withTimeout(deleteUserData(confirmAction.uid), 20000);
         toast.success(`Alle data voor ${confirmAction.displayName} verwijderd`);
       } else if (confirmAction.type === 'deleteGroup') {
-        await adminDeleteGroup(confirmAction.groupId);
+        await withTimeout(adminDeleteGroup(confirmAction.groupId), 20000);
         toast.success(`Groep "${confirmAction.groupName}" verwijderd`);
       } else if (confirmAction.type === 'removeGroupMember') {
-        await removeMemberFromGroup(confirmAction.groupId, confirmAction.memberUid);
+        await withTimeout(removeMemberFromGroup(confirmAction.groupId, confirmAction.memberUid), 20000);
         toast.success(`${confirmAction.memberName} verwijderd uit ${confirmAction.groupName}`);
       }
       setConfirmAction(null);
       await loadData();
     } catch (err) {
       console.error('Admin action failed:', err);
-      toast.error('Actie mislukt');
+      toast.error(err instanceof Error ? err.message : 'Actie mislukt');
     } finally {
       setActionLoading(false);
     }

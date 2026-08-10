@@ -4,6 +4,7 @@ import {
   setDoc,
   getDocs,
   writeBatch,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAppStore } from './store';
@@ -211,7 +212,7 @@ export async function syncGroupCollection<T extends { id: string }>(
   }
 }
 
-// --- Clear all Firestore data for a user ---
+// --- Clear all Firestore data for a user (subcollections + the root profile doc) ---
 
 export async function clearFirestoreData(uid: string): Promise<void> {
   const collections: CollectionName[] = ['categories', 'masterItems', 'trips', 'tripItems', 'customActivities'];
@@ -231,4 +232,8 @@ export async function clearFirestoreData(uid: string): Promise<void> {
       await batch.commit();
     }
   }
+
+  // Also remove the root profile doc (displayName/email/groupIds/...) — without
+  // this, a "deleted" user still shows up in the admin panel's user list.
+  await deleteDoc(doc(db, 'users', uid)).catch(() => {});
 }
