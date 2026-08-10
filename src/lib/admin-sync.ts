@@ -1,6 +1,5 @@
 import {
   collection,
-  collectionGroup,
   doc,
   getDocs,
   deleteDoc,
@@ -49,20 +48,11 @@ export async function fetchAllUsers(): Promise<{
   stats: AdminStats;
 }> {
   // 1. Fetch all user root docs (profile info, groupIds — written on every sign-in since
-  // this was added; may still be missing for accounts that haven't reopened the app since).
+  // this was added; accounts that haven't reopened the app since will show up next time
+  // they do, since every sign-in now writes this doc regardless of group membership).
   const usersSnap = await getDocs(collection(db, 'users'));
   const userDataById = new Map<string, Record<string, unknown>>();
   for (const d of usersSnap.docs) userDataById.set(d.id, d.data());
-
-  // 1b. Catch any user whose root doc doesn't exist yet (older accounts, pre-profile-write) —
-  // every user gets a 'categories' subcollection on first sync, so a collection-group scan
-  // (filtered to the users/ path, since groups/*/categories also exists) finds them too.
-  const categoriesGroupSnap = await getDocs(collectionGroup(db, 'categories'));
-  for (const d of categoriesGroupSnap.docs) {
-    if (!d.ref.path.startsWith('users/')) continue;
-    const uid = d.ref.parent.parent?.id;
-    if (uid && !userDataById.has(uid)) userDataById.set(uid, {});
-  }
 
   // 2. Fetch all groups to extract member display info (fallback) and group names
   const groupsSnap = await getDocs(collection(db, 'groups'));
