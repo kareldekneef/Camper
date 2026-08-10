@@ -98,10 +98,14 @@ export async function switchActiveGroup(
   return { group, ...masterData };
 }
 
-// --- Fetch multiple groups by id (skips any that no longer exist) ---
+// --- Fetch multiple groups by id (skips any that no longer exist or are no
+// longer accessible — e.g. we were removed from one since our own groupIds
+// bookkeeping was last written — rather than failing the whole batch) ---
 
 export async function fetchUserGroups(groupIds: string[]): Promise<Group[]> {
-  const groups = await Promise.all(groupIds.map((id) => fetchGroup(id)));
+  const groups = await Promise.all(
+    groupIds.map((id) => fetchGroup(id).catch(() => null))
+  );
   return groups.filter((g): g is Group => g !== null);
 }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { User } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, deleteField } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAppStore } from './store';
 import { Group, Trip, TripItem } from './types';
@@ -45,6 +45,21 @@ async function loadUserGroups(uid: string): Promise<{ groups: Group[]; activeGro
     fetchUserGroups(groupIds),
     fetchUserActiveGroupId(uid),
   ]);
+
+  // Self-heal: if any groupId no longer resolves (we were removed, or it was
+  // deleted), drop it from our own bookkeeping so this doesn't linger forever —
+  // e.g. after removeMemberFromGroup's own cleanup write to our user doc failed
+  // or was skipped for some reason.
+  if (groups.length !== groupIds.length) {
+    const validIds = new Set(groups.map((g) => g.id));
+    const cleanedIds = groupIds.filter((id) => validIds.has(id));
+    const newActiveId = activeGroupId && validIds.has(activeGroupId) ? activeGroupId : cleanedIds[0];
+    setDoc(
+      doc(db, 'users', uid),
+      { groupIds: cleanedIds, activeGroupId: newActiveId ?? deleteField() },
+      { merge: true }
+    ).catch(() => {});
+  }
 
   if (groups.length === 0) return { groups: [], activeGroup: null };
 
