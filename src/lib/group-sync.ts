@@ -181,16 +181,26 @@ export async function fetchSharedTrips(
 
       allTrips.push(...memberTrips);
 
-      // Fetch trip items for shared trips
-      const tripIds = new Set(memberTrips.map((t) => t.id));
-      const tripItemsSnap = await getDocs(
-        collection(db, 'users', memberUid, 'tripItems')
+      // Fetch each shared trip's items with an exact tripId filter — an unfiltered
+      // scan of the whole tripItems collection would require Firestore to prove the
+      // read rule (which does a cross-document get() on the parent trip) for every
+      // possible document in the collection, which it can't do for an unconstrained
+      // query and rejects outright. A `where('tripId', '==', <fixed id>)` filter pins
+      // that lookup to a single known trip, which Firestore can verify — same trick
+      // the trips query above already relies on via `where('groupId', '==', groupId)`.
+      const itemSnaps = await Promise.all(
+        memberTrips.map((t) =>
+          getDocs(
+            query(
+              collection(db, 'users', memberUid, 'tripItems'),
+              where('tripId', '==', t.id)
+            )
+          )
+        )
       );
-      const memberTripItems = tripItemsSnap.docs
-        .map((d) => d.data() as TripItem)
-        .filter((ti) => tripIds.has(ti.tripId));
-
-      allTripItems.push(...memberTripItems);
+      for (const snap of itemSnaps) {
+        allTripItems.push(...snap.docs.map((d) => d.data() as TripItem));
+      }
     } catch (error) {
       console.error(`Failed to fetch shared trips from ${memberUid}:`, error);
     }
